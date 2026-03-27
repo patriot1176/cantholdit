@@ -52,6 +52,48 @@ const seedStops = [
     hours: "24/7",
   },
 
+  // ── DAYTON / CINCINNATI CORRIDOR ──
+  {
+    name: "I-75 Rest Area Piqua",
+    address: "I-75 Northbound, Piqua, OH 45356",
+    type: "rest_area" as const,
+    lat: 40.14,
+    lng: -84.24,
+    hours: "24/7",
+  },
+  {
+    name: "Speedway Springboro",
+    address: "SR-73 & I-75, Springboro, OH 45066",
+    type: "gas_station" as const,
+    lat: 39.57,
+    lng: -84.25,
+    hours: "24/7",
+  },
+  {
+    name: "Buc-ee's Florence",
+    address: "7225 Turfway Rd, Florence, KY 41042",
+    type: "gas_station" as const,
+    lat: 38.98,
+    lng: -84.64,
+    hours: "24/7",
+  },
+  {
+    name: "Love's Travel Stop Wilmington",
+    address: "US-68 & I-71, Wilmington, OH 45177",
+    type: "gas_station" as const,
+    lat: 39.44,
+    lng: -83.83,
+    hours: "24/7",
+  },
+  {
+    name: "Flying J Jeffersonville",
+    address: "US-35 & SR-35, Jeffersonville, OH 43128",
+    type: "gas_station" as const,
+    lat: 39.64,
+    lng: -83.54,
+    hours: "24/7",
+  },
+
   // ── NEW: NATIONAL COVERAGE ──
   {
     name: "Buc-ee's Luling",
@@ -149,6 +191,54 @@ const seedRatings: {
       { cleanliness: 3, smell: 2, paperSupply: 2, lighting: 2, safety: 2, familyFriendly: 2, comment: null },
     ],
   },
+  // ── DAYTON / CINCINNATI CORRIDOR ──
+  {
+    stopName: "I-75 Rest Area Piqua",
+    // Target avg ~2.8
+    ratings: [
+      { cleanliness: 3, smell: 3, paperSupply: 3, lighting: 2, safety: 3, familyFriendly: 3, comment: "Ohio rest stops are a gamble. This one is losing." },
+      { cleanliness: 2, smell: 3, paperSupply: 2, lighting: 3, safety: 3, familyFriendly: 3, comment: "Not terrible, not good. Exactly what you'd expect from a highway rest area." },
+      { cleanliness: 3, smell: 3, paperSupply: 3, lighting: 3, safety: 3, familyFriendly: 2, comment: null },
+    ],
+  },
+  {
+    stopName: "Speedway Springboro",
+    // Target avg ~3.4
+    ratings: [
+      { cleanliness: 4, smell: 3, paperSupply: 4, lighting: 3, safety: 4, familyFriendly: 3, comment: "Surprisingly clean for a Speedway. Staff keeps it tidy." },
+      { cleanliness: 3, smell: 4, paperSupply: 3, lighting: 3, safety: 4, familyFriendly: 3, comment: "Quick stop, did the job. Nothing fancy." },
+      { cleanliness: 3, smell: 3, paperSupply: 4, lighting: 4, safety: 3, familyFriendly: 3, comment: null },
+    ],
+  },
+  {
+    stopName: "Buc-ee's Florence",
+    // Target avg ~4.9
+    ratings: [
+      { cleanliness: 5, smell: 5, paperSupply: 5, lighting: 5, safety: 5, familyFriendly: 5, comment: "The Florence Buc-ee's is an absolute gem. Brand new and immaculate. This is what all bathrooms should be." },
+      { cleanliness: 5, smell: 5, paperSupply: 5, lighting: 5, safety: 5, familyFriendly: 5, comment: "We detoured 15 minutes off I-71/75 specifically for this Buc-ee's. Worth every mile." },
+      { cleanliness: 5, smell: 5, paperSupply: 4, lighting: 5, safety: 5, familyFriendly: 5, comment: "Genuinely cleaner than my bathroom at home. No notes." },
+      { cleanliness: 5, smell: 5, paperSupply: 5, lighting: 5, safety: 4, familyFriendly: 5, comment: "Royal Flush 100%. The gold standard of road trip stops." },
+    ],
+  },
+  {
+    stopName: "Love's Travel Stop Wilmington",
+    // Target avg ~3.1
+    ratings: [
+      { cleanliness: 3, smell: 3, paperSupply: 3, lighting: 3, safety: 3, familyFriendly: 4, comment: "Standard Love's. Solid enough that I didn't run back to the car." },
+      { cleanliness: 3, smell: 3, paperSupply: 3, lighting: 3, safety: 3, familyFriendly: 3, comment: "Gets the job done. No horror stories, no pleasant surprises." },
+      { cleanliness: 3, smell: 3, paperSupply: 3, lighting: 4, safety: 3, familyFriendly: 3, comment: null },
+    ],
+  },
+  {
+    stopName: "Flying J Jeffersonville",
+    // Target avg ~2.3
+    ratings: [
+      { cleanliness: 2, smell: 2, paperSupply: 3, lighting: 2, safety: 2, familyFriendly: 2, comment: "Smells like it hasn't been mopped this decade. Functional but grim." },
+      { cleanliness: 2, smell: 3, paperSupply: 2, lighting: 2, safety: 2, familyFriendly: 3, comment: "I've seen worse, but not by much. Only stop here if you're desperate." },
+      { cleanliness: 3, smell: 2, paperSupply: 2, lighting: 2, safety: 3, familyFriendly: 2, comment: null },
+    ],
+  },
+
   // ── NEW STOPS ──
   {
     stopName: "Buc-ee's Luling",

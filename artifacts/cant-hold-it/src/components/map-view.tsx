@@ -72,7 +72,7 @@ export function MapView({
   useEffect(() => {
     if (userLocation && mapRef.current && !hasFlewToUser.current) {
       hasFlewToUser.current = true;
-      mapRef.current.flyTo([userLocation.lat, userLocation.lng], 13, {
+      mapRef.current.flyTo([userLocation.lat, userLocation.lng], 9, {
         duration: 1.5,
       });
     }
