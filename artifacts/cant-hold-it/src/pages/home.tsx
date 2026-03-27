@@ -126,6 +126,7 @@ export default function Home() {
     }
     setLocating(true);
     setLocateError(null);
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLocating(false);
@@ -135,12 +136,25 @@ export default function Home() {
         setSearchQuery("Near me");
         setSuggestions([]);
       },
-      () => {
+      (err) => {
         setLocating(false);
-        setLocateError("Location access denied — check your browser settings");
-        setTimeout(() => setLocateError(null), 4000);
+        if (err.code === 1) {
+          setLocateError(
+            isIOS
+              ? "Location blocked on iPhone. Fix: Settings → Privacy & Security → Location Services → Safari → While Using"
+              : "Location blocked — tap your browser's address bar lock icon and allow Location, then try again"
+          );
+        } else if (err.code === 2) {
+          setLocateError(
+            isIOS
+              ? "Location unavailable. Make sure Location Services is ON: Settings → Privacy & Security → Location Services"
+              : "Couldn't get your location — check your GPS and try again"
+          );
+        } else {
+          setLocateError("Location timed out — search by city name instead");
+        }
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 }
     );
   }, []);
 
@@ -387,10 +401,16 @@ export default function Home() {
               initial={{ opacity: 0, y: -6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
-              className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 text-sm font-medium text-red-700 flex items-center gap-2"
+              className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 text-sm font-medium text-red-700 flex items-start gap-2"
             >
-              <LocateFixed className="w-4 h-4 shrink-0" />
-              {locateError}
+              <LocateFixed className="w-4 h-4 shrink-0 mt-0.5" />
+              <span className="flex-1 leading-snug">{locateError}</span>
+              <button
+                type="button"
+                onClick={() => setLocateError(null)}
+                className="shrink-0 text-red-400 hover:text-red-600 font-bold text-base leading-none mt-0.5"
+                aria-label="Dismiss"
+              >×</button>
             </motion.div>
           )}
         </AnimatePresence>

@@ -389,14 +389,25 @@ export default function AddStop() {
         setLocatingMe(false);
       },
       (err) => {
-        setLocateError(
-          err.code === 1
-            ? "Location access denied. Please allow location in your browser settings."
-            : "Couldn't get your location. Try searching by name instead."
-        );
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        if (err.code === 1) {
+          setLocateError(
+            isIOS
+              ? "Location blocked on iPhone. Go to Settings → Privacy & Security → Location Services → Safari → While Using"
+              : "Location blocked — allow location access in your browser settings, then try again"
+          );
+        } else if (err.code === 2) {
+          setLocateError(
+            isIOS
+              ? "Location unavailable. Check Settings → Privacy & Security → Location Services is ON"
+              : "Couldn't get your location. Try searching by name instead."
+          );
+        } else {
+          setLocateError("Location timed out — search by name instead.");
+        }
         setLocatingMe(false);
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: false, timeout: 12000, maximumAge: 30000 }
     );
   }, [form, pickPlace]);
 
@@ -496,7 +507,15 @@ export default function AddStop() {
           )}
 
           {locateError && (
-            <p className="text-red-500 text-xs">{locateError}</p>
+            <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 flex items-start gap-2">
+              <span className="text-red-500 text-xs font-medium leading-snug flex-1">{locateError}</span>
+              <button
+                type="button"
+                onClick={() => setLocateError(null)}
+                className="text-red-400 hover:text-red-600 font-bold text-base leading-none shrink-0"
+                aria-label="Dismiss"
+              >×</button>
+            </div>
           )}
 
           {/* Divider */}
