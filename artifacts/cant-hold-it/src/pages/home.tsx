@@ -117,6 +117,7 @@ export default function Home() {
   const [locateError, setLocateError] = useState<string | null>(null);
   const [filterType, setFilterType] = useState("all");
   const [filterMinRating, setFilterMinRating] = useState(0);
+  const [filterHighway, setFilterHighway] = useState("");
 
   const locateMe = useCallback(() => {
     if (!("geolocation" in navigator)) {
@@ -253,10 +254,14 @@ export default function Home() {
     return allStops;
   })();
 
-  // Apply type + rating filters on top of proximity-filtered stops
+  // Apply type + rating + highway filters on top of proximity-filtered stops
   const filteredStops = stops?.filter((s) => {
     if (filterType !== "all" && s.type !== filterType) return false;
     if (filterMinRating > 0 && (s.overallRating === null || s.overallRating < filterMinRating)) return false;
+    if (filterHighway.trim()) {
+      const h = filterHighway.trim().toLowerCase();
+      if (!s.highway || !s.highway.toLowerCase().includes(h)) return false;
+    }
     return true;
   });
 
@@ -443,6 +448,26 @@ export default function Home() {
                 {chip.label}
               </button>
             ))}
+            <div className="w-px bg-white/40 shrink-0 self-stretch my-0.5" />
+            <div className="shrink-0 flex items-center gap-1 bg-white/90 backdrop-blur-sm border border-white/50 shadow-sm rounded-full px-2 py-1 focus-within:ring-2 focus-within:ring-primary/40">
+              <span className="text-xs leading-none select-none">🛣️</span>
+              <input
+                type="text"
+                value={filterHighway}
+                onChange={(e) => setFilterHighway(e.target.value.toUpperCase())}
+                placeholder="I-40…"
+                className="w-16 bg-transparent outline-none text-xs font-bold text-slate-700 placeholder:text-slate-400 placeholder:font-normal uppercase"
+              />
+              {filterHighway && (
+                <button
+                  type="button"
+                  onClick={() => setFilterHighway("")}
+                  className="text-slate-400 hover:text-slate-600 leading-none"
+                >
+                  ×
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -637,9 +662,14 @@ export default function Home() {
                                 <CheckCircle className="w-4 h-4 text-primary shrink-0" title="Community Verified" />
                               )}
                             </div>
-                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mt-1">
-                              {stop.type.replace("_", " ")}
-                            </p>
+                            <div className="flex items-center gap-2 mt-1 flex-wrap">
+                              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                                {stop.type.replace("_", " ")}
+                              </p>
+                              {stop.highway && (
+                                <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded-full">🛣️ {stop.highway}</span>
+                              )}
+                            </div>
                           </div>
                           <div className="bg-slate-50 px-2 py-1 rounded-lg border border-slate-100 flex flex-col items-center shrink-0">
                             <span className="text-sm font-bold text-foreground">
@@ -742,6 +772,30 @@ export default function Home() {
                     </button>
                   </div>
 
+                  {/* Highway filter chips derived from route stops */}
+                  {(() => {
+                    const highways = [...new Set(routeStops.map((s) => s.highway).filter(Boolean) as string[])].sort();
+                    if (highways.length === 0) return null;
+                    return (
+                      <div className="flex flex-wrap gap-2">
+                        <span className="text-xs text-muted-foreground font-medium self-center">Filter by highway:</span>
+                        {highways.map((hw) => (
+                          <button
+                            key={hw}
+                            onClick={() => setFilterHighway(filterHighway === hw ? "" : hw)}
+                            className={`px-3 py-1 rounded-full text-xs font-bold transition-all border ${
+                              filterHighway === hw
+                                ? "bg-primary text-white border-primary shadow-sm"
+                                : "bg-white text-slate-700 border-slate-200 hover:border-primary/40"
+                            }`}
+                          >
+                            🛣️ {hw}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
+
                   {routeStops.length === 0 ? (
                     <div className="text-center py-12 flex flex-col items-center gap-3">
                       <div className="text-5xl grayscale opacity-40">🌵</div>
@@ -764,7 +818,12 @@ export default function Home() {
                               <span className="text-[10px] text-muted-foreground">{stop.totalRatings} rev</span>
                             </div>
                           </div>
-                          <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-1">{stop.type.replace("_", " ")}</p>
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">{stop.type.replace("_", " ")}</p>
+                            {stop.highway && (
+                              <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded-full">🛣️ {stop.highway}</span>
+                            )}
+                          </div>
                           <p className="text-sm text-foreground/70 truncate">{stop.address}</p>
                         </div>
                       </Link>

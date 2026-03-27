@@ -159,9 +159,47 @@ const addStopSchema = z.object({
   address: z.string().min(1),
   type: z.enum(["rest_area", "gas_station", "fast_food", "truck_stop", "other"]),
   hours: z.string().optional().nullable(),
+  highway: z.string().optional().nullable(),
   lat: z.number(),
   lng: z.number(),
 });
+
+function normalizeHighway(raw: string): string | null {
+  const s = raw.trim();
+  const interstate = s.match(/(?:Interstate|I[-\s]?)\s*(\d+)/i);
+  if (interstate) return `I-${interstate[1]}`;
+  const usRoute = s.match(/(?:US(?:\s*(?:Route|Hwy|Highway))?|U\.S\.)\s*[-\s]?\s*(\d+)/i);
+  if (usRoute) return `US-${usRoute[1]}`;
+  const stateRoute = s.match(/(?:State\s*(?:Route|Road|Hwy)|SR|Highway|Hwy)\s*[-\s]?(\d+)/i);
+  if (stateRoute) return `SR-${stateRoute[1]}`;
+  return null;
+}
+
+async function detectHighwayFromCoords(lat: number, lng: number): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1&zoom=16`,
+      { headers: { "Accept-Language": "en" } }
+    );
+    const data = await res.json();
+    const addr = data.address || {};
+    // Check highway-specific fields first
+    for (const key of ["motorway", "trunk", "primary", "road"]) {
+      if (addr[key]) {
+        const h = normalizeHighway(addr[key]);
+        if (h) return h;
+      }
+    }
+    // Also check the display name for highway patterns
+    if (data.display_name) {
+      const h = normalizeHighway(data.display_name);
+      if (h) return h;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 type AddStopValues = z.infer<typeof addStopSchema>;
 
@@ -213,6 +251,7 @@ export default function AddStop() {
       address: "",
       type: "rest_area",
       hours: "",
+      highway: "",
       lat: 0,
       lng: 0,
     },
@@ -247,7 +286,7 @@ export default function AddStop() {
     return () => { if (debounceTimer.current) clearTimeout(debounceTimer.current); };
   }, [locationQuery, selectedPlace]);
 
-  const pickPlace = useCallback((place: GeoSuggestion) => {
+  const pickPlace = useCallback(async (place: GeoSuggestion) => {
     setSelectedPlace(place);
     setLocationQuery(place.label);
     setSuggestions([]);
@@ -257,6 +296,13 @@ export default function AddStop() {
     // Auto-fill name if it's empty
     if (!form.getValues("name").trim()) {
       form.setValue("name", place.label.split(",")[0].trim(), { shouldValidate: true });
+    }
+    // Auto-detect nearby highway if field is empty
+    if (!form.getValues("highway")?.trim()) {
+      const highway = await detectHighwayFromCoords(place.lat, place.lng);
+      if (highway && !form.getValues("highway")?.trim()) {
+        form.setValue("highway", highway);
+      }
     }
   }, [form]);
 
@@ -330,6 +376,7 @@ export default function AddStop() {
         lat: data.lat,
         lng: data.lng,
         hours: data.hours || null,
+        highway: data.highway?.trim() || null,
       },
     });
   };
@@ -535,6 +582,26 @@ export default function AddStop() {
           {form.formState.errors.name && (
             <p className="text-red-500 text-xs mt-1">{form.formState.errors.name.message}</p>
           )}
+        </div>
+
+        {/* Highway (optional) */}
+        <div className="bg-white p-5 rounded-3xl shadow-sm border border-border flex flex-col gap-2">
+          <label className="font-display font-bold text-base text-foreground">
+            Nearby Highway <span className="text-muted-foreground font-normal text-sm">(optional)</span>
+          </label>
+          <p className="text-xs text-muted-foreground -mt-1">Auto-detected from location — edit or clear if wrong</p>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-base leading-none select-none">🛣️</span>
+            <input
+              {...form.register("highway")}
+              placeholder='e.g. "I-40", "US-1", "US-66"'
+              className="w-full bg-slate-50 border border-border rounded-2xl pl-9 pr-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all placeholder:text-muted-foreground/60 uppercase"
+              onChange={(e) => {
+                const raw = e.target.value;
+                form.setValue("highway", raw.toUpperCase());
+              }}
+            />
+          </div>
         </div>
 
         {/* Type */}

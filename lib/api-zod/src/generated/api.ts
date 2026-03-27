@@ -45,6 +45,7 @@ export const GetStopsResponseItem = zod.object({
   totalRatings: zod.number(),
   badges: zod.array(zod.enum(["royal_flush", "biohazard", "most_reviewed"])),
   amenities: zod.array(zod.string()).default([]),
+  highway: zod.string().nullable(),
   createdAt: zod.date(),
 });
 export const GetStopsResponse = zod.array(GetStopsResponseItem);
@@ -65,6 +66,7 @@ export const CreateStopBody = zod.object({
   lat: zod.number(),
   lng: zod.number(),
   hours: zod.string().nullish(),
+  highway: zod.string().nullish(),
 });
 
 /**
@@ -98,6 +100,7 @@ export const GetStopResponse = zod.object({
   familyFriendly: zod.number().nullable(),
   hours: zod.string().nullable(),
   amenities: zod.array(zod.string()).default([]),
+  highway: zod.string().nullable(),
   recentRatings: zod.array(
     zod.object({
       id: zod.number(),

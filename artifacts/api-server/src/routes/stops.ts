@@ -48,6 +48,7 @@ router.get("/stops", async (req, res): Promise<void> => {
       lng: stopsTable.lng,
       hours: stopsTable.hours,
       amenities: stopsTable.amenities,
+      highway: stopsTable.highway,
       createdAt: stopsTable.createdAt,
       overallRating: avg(
         sql`(${ratingsTable.cleanliness} + ${ratingsTable.smell} + ${ratingsTable.paperSupply} + ${ratingsTable.lighting} + ${ratingsTable.safety} + ${ratingsTable.familyFriendly}) / 6.0`
@@ -77,6 +78,7 @@ router.get("/stops", async (req, res): Promise<void> => {
       overallRating,
       totalRatings,
       amenities,
+      highway: s.highway ?? null,
       badges: computeBadges(overallRating, totalRatings, isTopReviewed),
       createdAt: s.createdAt,
     };
@@ -129,6 +131,7 @@ router.get("/stops/:id", async (req, res): Promise<void> => {
       lng: stopsTable.lng,
       hours: stopsTable.hours,
       amenities: stopsTable.amenities,
+      highway: stopsTable.highway,
       createdAt: stopsTable.createdAt,
       overallRating: avg(
         sql`(${ratingsTable.cleanliness} + ${ratingsTable.smell} + ${ratingsTable.paperSupply} + ${ratingsTable.lighting} + ${ratingsTable.safety} + ${ratingsTable.familyFriendly}) / 6.0`
@@ -163,6 +166,7 @@ router.get("/stops/:id", async (req, res): Promise<void> => {
   const totalRatings = Number(stopWithStats.totalRatings);
   let amenities: string[] = [];
   try { amenities = JSON.parse(stopWithStats.amenities || "[]"); } catch { amenities = []; }
+  const highway = stopWithStats.highway ?? null;
 
   const formattedRatings = recentRatings.map((r) => ({
     ...r,
@@ -185,6 +189,7 @@ router.get("/stops/:id", async (req, res): Promise<void> => {
     lng: stopWithStats.lng,
     hours: stopWithStats.hours ?? null,
     amenities,
+    highway,
     overallRating,
     totalRatings,
     badges: computeBadges(overallRating, totalRatings, false),

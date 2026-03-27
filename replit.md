@@ -109,7 +109,9 @@ Community-rated restroom and rest stop finder for US road trippers. Tagline: "Be
 - **Amenity tags (Stop Detail)**: 12 tap-to-toggle amenity chips (♿ Accessible, 👶 Baby Changing, 🚿 Shower, etc.). Community-toggled via PATCH /stops/:id/amenities. Optimistic UI.
 - **Report a problem (Stop Detail)**: Flag button opens bottom-sheet modal with 5 report types (permanently closed, temporarily closed, wrong location, wrong info, other) + optional comment. Submitted via POST /stops/:id/report.
 - **Quick-rate prompt**: After viewing a stop detail, sessionStorage saves the stop. On returning to home screen a floating banner appears: "Just visited? [Name] — Rate it" button. Dismissed on tap or X.
-- **Filter chips**: Type (All/Rest Area/Gas/Truck/Food) + rating (Any/3★+/4★+) chips. Shown in map + list views.
+- **Highway geotagging**: Stops can be tagged with a nearby highway (e.g. "I-40", "US-1"). Auto-detected via Nominatim reverse geocode when a location is picked in add-stop. Displayed as blue pill badge "🛣️ I-40" in list view, route results, and stop detail. Editable manual input on add-stop form.
+- **Highway filter**: Small highway input (🛣️ icon, "I-40…" placeholder) appended to filter chips row. Filters list/map to stops tagged with that highway. Case-insensitive substring match. Route tab additionally shows highway chips auto-derived from route stops for one-tap filtering.
+- **Filter chips**: Type (All/Rest Area/Gas/Truck/Food) + rating (Any/3★+/4★+) + highway filter chips. Shown in map + list views. Row is horizontally scrollable.
 - **Photo uploads**: File input → POST `/api/storage/uploads/request-url` → PUT presigned URL → POST `/api/stops/:id/photos`. Stored in Replit object storage.
 - **Add Stop**: Form to contribute new restroom locations.
 - **Rating form**: 6-category flush rating (cleanliness, odor, TP supply, lighting, safety, family-friendly).
@@ -129,7 +131,7 @@ Community-rated restroom and rest stop finder for US road trippers. Tagline: "Be
 - `GET /api/storage/public-objects/*` — serve public objects unconditionally
 
 ### DB Schema
-- `stops` — name, type, lat/lng, address, notes, amenities (JSON text array, default '[]')
+- `stops` — name, type, lat/lng, address, notes, amenities (JSON text array, default '[]'), highway (nullable text, e.g. "I-40")
 - `ratings` — 6 numeric columns + comment, FK to stops
 - `photos` — objectPath, FK to stops (cascade delete)
 - `stop_reports` — reportType enum (permanently_closed/temporarily_closed/wrong_location/wrong_info/other), optional comment, FK to stops

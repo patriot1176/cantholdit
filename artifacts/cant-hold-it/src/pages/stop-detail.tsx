@@ -238,6 +238,9 @@ export default function StopDetail() {
                 <span className="px-2.5 py-1 bg-slate-200 text-slate-700 text-[10px] font-bold uppercase tracking-wider rounded-md">
                   {stop.type.replace("_", " ")}
                 </span>
+                {stop.highway && (
+                  <span className="px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold rounded-full">🛣️ {stop.highway}</span>
+                )}
                 <a
                   href={`https://www.google.com/maps/dir/?api=1&destination=${stop.lat},${stop.lng}`}
                   target="_blank"
