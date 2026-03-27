@@ -10,22 +10,27 @@ import { FlushRating } from "@/components/flush-rating";
 
 type ViewMode = "map" | "list" | "top";
 
-async function geocodeQuery(
-  q: string
-): Promise<{ lat: number; lng: number } | null> {
+interface GeoResult { lat: number; lng: number; label: string; }
+
+async function geocodeSuggest(q: string): Promise<GeoResult[]> {
   try {
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=us`,
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&countrycodes=us&addressdetails=1`,
       { headers: { "Accept-Language": "en" } }
     );
     const data = await res.json();
-    if (data.length > 0) {
-      return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-    }
+    return (data as any[]).map((r: any) => ({
+      lat: parseFloat(r.lat),
+      lng: parseFloat(r.lon),
+      label: r.display_name
+        .split(",")
+        .slice(0, 3)
+        .join(",")
+        .trim(),
+    }));
   } catch {
-    // silently ignore network errors
+    return [];
   }
-  return null;
 }
 
 // Haversine formula — returns distance in km between two lat/lng points
@@ -49,34 +54,48 @@ const RADIUS_KM = 800;
 export default function Home() {
   const { location } = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchCenter, setSearchCenter] = useState<{
-    lat: number;
-    lng: number;
-  } | null>(null);
+  const [searchCenter, setSearchCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const [suggestions, setSuggestions] = useState<GeoResult[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("map");
 
-  // Geocode and update searchCenter immediately (shared by debounce + Enter key)
-  const runGeocode = useCallback(async (q: string) => {
-    if (!q.trim()) { setSearchCenter(null); return; }
-    const result = await geocodeQuery(q);
-    if (result) setSearchCenter(result);
+  // Pick a suggestion: set map center, clear dropdown
+  const pickSuggestion = useCallback((r: GeoResult) => {
+    setSearchCenter({ lat: r.lat, lng: r.lng });
+    setSuggestions([]);
   }, []);
 
-  // Debounce timer ref — cancelled on Enter so it fires immediately
+  // Geocode: if 1 result auto-select; if multiple show picker
+  const runGeocode = useCallback(async (q: string) => {
+    if (!q.trim()) { setSearchCenter(null); setSuggestions([]); return; }
+    const results = await geocodeSuggest(q);
+    if (results.length === 0) return;
+    if (results.length === 1) {
+      pickSuggestion(results[0]);
+    } else {
+      setSuggestions(results);
+    }
+  }, [pickSuggestion]);
+
+  // Debounce timer ref — cancelled on Enter/button tap so it fires immediately
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Clear suggestions when query changes
   useEffect(() => {
+    setSuggestions([]);
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     if (!searchQuery.trim()) { setSearchCenter(null); return; }
-    debounceTimer.current = setTimeout(() => runGeocode(searchQuery), 600);
+    debounceTimer.current = setTimeout(() => runGeocode(searchQuery), 700);
     return () => { if (debounceTimer.current) clearTimeout(debounceTimer.current); };
   }, [searchQuery, runGeocode]);
 
+  const fireSearch = useCallback(() => {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    runGeocode(searchQuery);
+  }, [searchQuery, runGeocode]);
+
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current);
-      runGeocode(searchQuery);
-    }
+    if (e.key === "Enter") fireSearch();
+    if (e.key === "Escape") setSuggestions([]);
   };
 
   // Always fetch ALL stops — no text filter (search drives map pan, not stop filtering)
@@ -118,52 +137,74 @@ export default function Home() {
   return (
     <Layout>
       {/* Search bar + tab switcher */}
-      <div className="absolute top-4 left-4 right-4 z-10 flex gap-2">
-        <div className="flex-1 bg-white/90 backdrop-blur-xl rounded-2xl shadow-lg shadow-black/5 border border-white/50 flex items-center px-4 py-3 focus-within:ring-2 focus-within:ring-primary/50 transition-all min-w-0">
-          <input
-            type="text"
-            inputMode="search"
-            enterKeyHint="search"
-            placeholder="City, highway, or state..."
-            className="flex-1 bg-transparent border-none outline-none font-medium placeholder:text-muted-foreground text-sm min-w-0"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={handleSearchKeyDown}
-          />
-          <button
-            type="button"
-            onClick={() => {
-              if (debounceTimer.current) clearTimeout(debounceTimer.current);
-              runGeocode(searchQuery);
-            }}
-            className="ml-2 shrink-0 w-8 h-8 bg-primary text-white rounded-xl flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all shadow-sm shadow-primary/30"
-            aria-label="Search"
-          >
-            <Search className="w-4 h-4" />
-          </button>
+      <div className="absolute top-4 left-4 right-4 z-10 flex flex-col gap-2">
+        <div className="flex gap-2">
+          <div className="flex-1 bg-white/90 backdrop-blur-xl rounded-2xl shadow-lg shadow-black/5 border border-white/50 flex items-center px-4 py-3 focus-within:ring-2 focus-within:ring-primary/50 transition-all min-w-0">
+            <input
+              type="text"
+              inputMode="search"
+              enterKeyHint="search"
+              placeholder="City, highway, or state..."
+              className="flex-1 bg-transparent border-none outline-none font-medium placeholder:text-muted-foreground text-sm min-w-0"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
+            />
+            <button
+              type="button"
+              onClick={fireSearch}
+              className="ml-2 shrink-0 w-8 h-8 bg-primary text-white rounded-xl flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all shadow-sm shadow-primary/30"
+              aria-label="Search"
+            >
+              <Search className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* 3-tab switcher */}
+          <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-lg shadow-black/5 border border-white/50 flex overflow-hidden shrink-0">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const active = viewMode === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setViewMode(tab.id)}
+                  className={`px-3 py-3 flex items-center justify-center transition-all ${
+                    active
+                      ? "bg-primary text-white"
+                      : "text-muted-foreground hover:bg-slate-50 hover:text-foreground"
+                  }`}
+                  aria-label={tab.label}
+                >
+                  <Icon className="w-4 h-4" />
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        {/* 3-tab switcher */}
-        <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-lg shadow-black/5 border border-white/50 flex overflow-hidden shrink-0">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const active = viewMode === tab.id;
-            return (
+        {/* Disambiguation dropdown — shown when multiple results match */}
+        {suggestions.length > 1 && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl border border-border overflow-hidden"
+          >
+            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider px-4 pt-3 pb-1">
+              Which one?
+            </p>
+            {suggestions.map((s, i) => (
               <button
-                key={tab.id}
-                onClick={() => setViewMode(tab.id)}
-                className={`px-3 py-3 flex items-center justify-center transition-all ${
-                  active
-                    ? "bg-primary text-white"
-                    : "text-muted-foreground hover:bg-slate-50 hover:text-foreground"
-                }`}
-                aria-label={tab.label}
+                key={i}
+                type="button"
+                onClick={() => pickSuggestion(s)}
+                className="w-full text-left px-4 py-3 text-sm font-medium text-foreground hover:bg-primary/5 active:bg-primary/10 border-t border-border/40 first:border-0 transition-colors"
               >
-                <Icon className="w-4 h-4" />
+                {s.label}
               </button>
-            );
-          })}
-        </div>
+            ))}
+          </motion.div>
+        )}
       </div>
 
       {/* Floating Add Stop button */}

@@ -6,7 +6,7 @@ import { useGetStop, useCreateRating, getGetStopQueryKey } from "@workspace/api-
 import { Layout } from "@/components/layout";
 import { FlushRating } from "@/components/flush-rating";
 import { ArrowLeft, Loader2, CheckCircle2 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
@@ -58,7 +58,6 @@ export default function RateStop() {
     }
   });
 
-  // Watch all 6 category values so the button updates reactively
   const watchedRatings = form.watch([
     "cleanliness", "smell", "paperSupply", "lighting", "safety", "familyFriendly"
   ]);
@@ -88,7 +87,7 @@ export default function RateStop() {
   if (isSuccess) {
     return (
       <Layout>
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           className="flex-1 flex flex-col items-center justify-center p-8 text-center"
@@ -105,76 +104,93 @@ export default function RateStop() {
 
   return (
     <Layout>
-      <div className="bg-white sticky top-[60px] z-10 px-4 py-4 border-b border-border/50">
-        <Link href={`/stop/${id}`} className="inline-flex items-center text-primary font-bold text-sm mb-2">
-          <ArrowLeft className="w-4 h-4 mr-1.5" /> Back
-        </Link>
-        <h1 className="font-display text-2xl font-bold text-foreground">
-          Rate your throne
-        </h1>
-        {stop && <p className="text-sm text-muted-foreground mt-1">at {stop.name}</p>}
-      </div>
-
+      {/*
+        form wraps main + button so type="submit" works.
+        Inner layout: flex column, scroll area takes flex-1,
+        button bar sits below it — never scrolls away.
+      */}
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className="flex-1 overflow-y-auto p-4 flex flex-col gap-6 pb-28"
-        style={{ WebkitOverflowScrolling: "touch" }}
+        className="flex-1 flex flex-col overflow-hidden"
       >
-        <div className="bg-blue-50 text-blue-800 p-4 rounded-2xl font-medium text-sm border border-blue-100">
-          Be honest. Future road trippers are counting on you.
-        </div>
-
-        <div className="flex flex-col gap-8">
-          {categories.map((cat, i) => (
-            <motion.div 
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.1 }}
-              key={cat.key} 
-              className="bg-white p-5 rounded-3xl shadow-sm border border-border flex flex-col gap-3"
+        {/* Scrollable content */}
+        <div
+          className="flex-1 overflow-y-auto p-4 flex flex-col gap-6 pb-4"
+          style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+        >
+          {/* Back + title */}
+          <div>
+            <Link
+              href={`/stop/${id}`}
+              className="inline-flex items-center text-primary font-bold text-sm mb-3"
             >
-              <div>
-                <h3 className="font-display font-bold text-lg text-foreground">{cat.label}</h3>
-                <p className="text-xs font-medium" style={{ color: "#475569" }}>{cat.desc}</p>
-                <p className="text-[10px] font-medium mt-0.5" style={{ color: "#475569" }}>1 = worst · 5 = best</p>
-              </div>
-              <Controller
-                name={cat.key}
-                control={form.control}
-                render={({ field }) => (
-                  <div className="flex flex-col items-center gap-2 bg-slate-50 py-4 rounded-2xl">
-                    <FlushRating
-                      rating={field.value || null}
-                      interactive
-                      size="lg"
-                      onChange={field.onChange}
-                    />
-                    <div className={`text-sm font-bold min-h-[1.25rem] transition-all duration-150 ${
-                      field.value >= 4 ? "text-blue-500" :
-                      field.value >= 3 ? "text-foreground/70" :
-                      field.value >= 1 ? "text-red-500" :
-                      "text-red-400"
-                    }`}>
-                      {field.value ? flushLabels[field.value] : "Tap to rate"}
+              <ArrowLeft className="w-4 h-4 mr-1.5" /> Back
+            </Link>
+            <h1 className="font-display text-2xl font-bold text-foreground">
+              Rate your throne
+            </h1>
+            {stop && (
+              <p className="text-sm text-muted-foreground mt-1">at {stop.name}</p>
+            )}
+          </div>
+
+          <div className="bg-blue-50 text-blue-800 p-4 rounded-2xl font-medium text-sm border border-blue-100">
+            Be honest. Future road trippers are counting on you.
+          </div>
+
+          <div className="flex flex-col gap-8">
+            {categories.map((cat, i) => (
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.08 }}
+                key={cat.key}
+                className="bg-white p-5 rounded-3xl shadow-sm border border-border flex flex-col gap-3"
+              >
+                <div>
+                  <h3 className="font-display font-bold text-lg text-foreground">{cat.label}</h3>
+                  <p className="text-xs font-medium text-slate-500">{cat.desc}</p>
+                  <p className="text-[10px] font-medium mt-0.5 text-slate-400">1 = worst · 5 = best</p>
+                </div>
+                <Controller
+                  name={cat.key}
+                  control={form.control}
+                  render={({ field }) => (
+                    <div className="flex flex-col items-center gap-2 bg-slate-50 py-4 rounded-2xl">
+                      <FlushRating
+                        rating={field.value || null}
+                        interactive
+                        size="lg"
+                        onChange={field.onChange}
+                      />
+                      <div className={`text-sm font-bold min-h-[1.25rem] transition-all duration-150 ${
+                        field.value >= 4 ? "text-blue-500" :
+                        field.value >= 3 ? "text-slate-600" :
+                        field.value >= 1 ? "text-red-500" :
+                        "text-red-400"
+                      }`}>
+                        {field.value ? flushLabels[field.value] : "Tap to rate"}
+                      </div>
                     </div>
-                  </div>
-                )}
-              />
-            </motion.div>
-          ))}
+                  )}
+                />
+              </motion.div>
+            ))}
+          </div>
+
+          <div className="bg-white p-5 rounded-3xl shadow-sm border border-border">
+            <h3 className="font-display font-bold text-lg text-foreground mb-1">Final Thoughts</h3>
+            <p className="text-xs text-muted-foreground mb-3">Leave a quick note (optional)</p>
+            <textarea
+              {...form.register("comment")}
+              placeholder="Was there soap? Hand dryers working?"
+              className="w-full bg-slate-50 border border-border rounded-2xl p-4 text-sm resize-none h-24 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all placeholder:text-muted-foreground/70"
+            />
+          </div>
         </div>
 
-        <div className="bg-white p-5 rounded-3xl shadow-sm border border-border">
-          <h3 className="font-display font-bold text-lg text-foreground mb-1">Final Thoughts</h3>
-          <p className="text-xs text-muted-foreground mb-3">Leave a quick note (optional)</p>
-          <textarea 
-            {...form.register("comment")}
-            placeholder="Was there soap? Hand dryers working?"
-            className="w-full bg-slate-50 border border-border rounded-2xl p-4 text-sm resize-none h-24 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all placeholder:text-muted-foreground/70"
-          />
-        </div>
-
-        <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto p-4 bg-white/80 backdrop-blur-xl border-t border-border z-50">
+        {/* Submit bar — outside the scroll div, always visible at the bottom */}
+        <div className="shrink-0 p-4 border-t border-border bg-white/90 backdrop-blur-xl">
           <motion.button
             type="submit"
             disabled={!allRated || createRating.isPending}
