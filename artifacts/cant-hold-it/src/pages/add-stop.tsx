@@ -23,6 +23,7 @@ interface GeoSuggestion {
   lng: number;
   label: string;
   address: string;
+  distKm: number | null;
 }
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -69,18 +70,22 @@ async function searchPlaces(
   q: string,
   userLocation?: { lat: number; lng: number } | null
 ): Promise<GeoSuggestion[]> {
-  // Stage 1 — bounded: only return results within ~150 km of the user
-  // This forces Nominatim to show local results even when national chains score higher globally
+  const noGps = (r: ReturnType<typeof parseNominatimResults>[0]): GeoSuggestion =>
+    ({ lat: r.lat, lng: r.lng, label: r.label, address: r.address, distKm: null });
+  const withDist = (r: ReturnType<typeof parseNominatimResults>[0]): GeoSuggestion =>
+    ({ lat: r.lat, lng: r.lng, label: r.label, address: r.address, distKm: r.distKm });
+
+  // Stage 1 — bounded: only return results within ~250 km of the user.
+  // This forces Nominatim to show local results even when national chains score higher globally.
   if (userLocation) {
-    const delta = 1.35; // ≈ 150 km per axis
+    const delta = 2.25; // ≈ 250 km per axis
     const vb = `${userLocation.lng - delta},${userLocation.lat - delta},${userLocation.lng + delta},${userLocation.lat + delta}`;
     const local = parseNominatimResults(
-      await fetchNominatim(q, `&limit=8&viewbox=${vb}&bounded=1`),
+      await fetchNominatim(q, `&limit=10&viewbox=${vb}&bounded=1`),
       userLocation
     );
     if (local.length > 0) {
-      return local.sort((a, b) => a.distKm - b.distKm).slice(0, 6)
-        .map(({ lat, lng, label, address }) => ({ lat, lng, label, address }));
+      return local.sort((a, b) => a.distKm - b.distKm).slice(0, 6).map(withDist);
     }
   }
 
@@ -90,7 +95,7 @@ async function searchPlaces(
     userLocation
   );
   if (userLocation) national.sort((a, b) => a.distKm - b.distKm);
-  return national.slice(0, 6).map(({ lat, lng, label, address }) => ({ lat, lng, label, address }));
+  return national.slice(0, 6).map(userLocation ? withDist : noGps);
 }
 
 const addStopSchema = z.object({
@@ -321,20 +326,36 @@ export default function AddStop() {
                   exit={{ opacity: 0, y: -4 }}
                   className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl border border-border overflow-hidden z-50"
                 >
-                  {suggestions.map((s, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => pickPlace(s)}
-                      className="w-full text-left px-4 py-3 hover:bg-primary/5 active:bg-primary/10 border-t border-border/40 first:border-0 transition-colors flex items-start gap-2"
-                    >
-                      <MapPin className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-foreground truncate">{s.label}</p>
-                        <p className="text-xs text-muted-foreground truncate">{s.address}</p>
-                      </div>
-                    </button>
-                  ))}
+                  {suggestions.map((s, i) => {
+                    const dist = s.distKm;
+                    const distLabel = dist == null ? null
+                      : dist < 1 ? "< 1 km"
+                      : dist < 10 ? `${dist.toFixed(1)} km`
+                      : `${Math.round(dist)} km`;
+                    const distColor = dist == null ? ""
+                      : dist < 80 ? "text-green-600"
+                      : dist < 300 ? "text-amber-500"
+                      : "text-red-500";
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => pickPlace(s)}
+                        className="w-full text-left px-4 py-3 hover:bg-primary/5 active:bg-primary/10 border-t border-border/40 first:border-0 transition-colors flex items-start gap-2"
+                      >
+                        <MapPin className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-foreground truncate">{s.label}</p>
+                          <p className="text-xs text-muted-foreground truncate">{s.address}</p>
+                        </div>
+                        {distLabel && (
+                          <span className={`text-xs font-semibold shrink-0 mt-0.5 ${distColor}`}>
+                            {distLabel}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </motion.div>
               )}
             </AnimatePresence>
