@@ -58,13 +58,13 @@ export default function RateStop() {
     }
   });
 
+  // Watch all 6 category values so the button updates reactively
+  const watchedRatings = form.watch([
+    "cleanliness", "smell", "paperSupply", "lighting", "safety", "familyFriendly"
+  ]);
+  const allRated = watchedRatings.every((v) => (v ?? 0) >= 1);
+
   const onSubmit = (data: RatingFormValues) => {
-    // Ensure no 0s are submitted
-    const hasZeros = Object.values(data).some(v => v === 0);
-    if (hasZeros) {
-      alert("Please rate all categories before flushing!");
-      return;
-    }
     createRating.mutate({ id, data });
   };
 
@@ -115,7 +115,11 @@ export default function RateStop() {
         {stop && <p className="text-sm text-muted-foreground mt-1">at {stop.name}</p>}
       </div>
 
-      <form onSubmit={form.handleSubmit(onSubmit)} className="p-4 flex flex-col gap-6 pb-24">
+      <form
+        onSubmit={form.handleSubmit(onSubmit)}
+        className="flex-1 overflow-y-auto p-4 flex flex-col gap-6 pb-28"
+        style={{ WebkitOverflowScrolling: "touch" }}
+      >
         <div className="bg-blue-50 text-blue-800 p-4 rounded-2xl font-medium text-sm border border-blue-100">
           Be honest. Future road trippers are counting on you.
         </div>
@@ -149,9 +153,9 @@ export default function RateStop() {
                       field.value >= 4 ? "text-blue-500" :
                       field.value >= 3 ? "text-foreground/70" :
                       field.value >= 1 ? "text-red-500" :
-                      "text-transparent"
+                      "text-red-400"
                     }`}>
-                      {field.value ? flushLabels[field.value] : "tap to rate"}
+                      {field.value ? flushLabels[field.value] : "Tap to rate"}
                     </div>
                   </div>
                 )}
@@ -171,17 +175,23 @@ export default function RateStop() {
         </div>
 
         <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto p-4 bg-white/80 backdrop-blur-xl border-t border-border z-50">
-          <motion.button 
+          <motion.button
             type="submit"
-            disabled={createRating.isPending}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="w-full bg-gradient-to-r from-primary to-blue-500 disabled:from-slate-400 disabled:to-slate-500 text-white p-4 rounded-2xl font-bold shadow-lg shadow-primary/30 disabled:shadow-none flex items-center justify-center gap-2 text-lg transition-all"
+            disabled={!allRated || createRating.isPending}
+            whileHover={allRated ? { scale: 1.02 } : {}}
+            whileTap={allRated ? { scale: 0.98 } : {}}
+            className={`w-full text-white p-4 rounded-2xl font-bold flex items-center justify-center gap-2 text-lg transition-all ${
+              allRated
+                ? "bg-gradient-to-r from-primary to-blue-500 shadow-lg shadow-primary/30"
+                : "bg-slate-300 cursor-not-allowed shadow-none"
+            }`}
           >
             {createRating.isPending ? (
               <Loader2 className="w-6 h-6 animate-spin" />
-            ) : (
+            ) : allRated ? (
               "Submit Rating 🚽"
+            ) : (
+              "Rate all categories to submit"
             )}
           </motion.button>
         </div>

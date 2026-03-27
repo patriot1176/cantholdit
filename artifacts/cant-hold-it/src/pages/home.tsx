@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Layout } from "@/components/layout";
 import { MapView } from "@/components/map-view";
 import { useLocation } from "@/hooks/use-location";
@@ -55,18 +55,29 @@ export default function Home() {
   } | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("map");
 
-  // Debounced Nominatim geocoding — runs 600ms after the user stops typing
+  // Geocode and update searchCenter immediately (shared by debounce + Enter key)
+  const runGeocode = useCallback(async (q: string) => {
+    if (!q.trim()) { setSearchCenter(null); return; }
+    const result = await geocodeQuery(q);
+    if (result) setSearchCenter(result);
+  }, []);
+
+  // Debounce timer ref — cancelled on Enter so it fires immediately
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
-    if (!searchQuery.trim()) {
-      setSearchCenter(null);
-      return;
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    if (!searchQuery.trim()) { setSearchCenter(null); return; }
+    debounceTimer.current = setTimeout(() => runGeocode(searchQuery), 600);
+    return () => { if (debounceTimer.current) clearTimeout(debounceTimer.current); };
+  }, [searchQuery, runGeocode]);
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+      runGeocode(searchQuery);
     }
-    const timer = setTimeout(async () => {
-      const result = await geocodeQuery(searchQuery);
-      if (result) setSearchCenter(result);
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+  };
 
   // Always fetch ALL stops — no text filter (search drives map pan, not stop filtering)
   const { data: allStops, isLoading } = useGetStops(
@@ -114,6 +125,7 @@ export default function Home() {
             className="flex-1 bg-transparent border-none outline-none font-medium placeholder:text-muted-foreground text-sm min-w-0"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
           />
         </div>
 

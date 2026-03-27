@@ -62,9 +62,9 @@ export default function StopDetail() {
           <ArrowLeft className="w-4 h-4 mr-1.5" /> Map
         </Link>
         
-        <div className="flex justify-between items-start gap-4">
-          <div>
-            <h1 className="font-display text-3xl font-bold text-foreground leading-tight">
+        <div className="flex justify-between items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <h1 className="font-display text-2xl font-bold text-foreground leading-tight">
               {stop.name}
             </h1>
             <div className="flex items-center mt-2 text-muted-foreground text-sm">
@@ -77,12 +77,12 @@ export default function StopDetail() {
           </div>
           
           <div className="flex flex-col items-end shrink-0">
-            <div className="bg-white p-3 rounded-2xl shadow-lg border border-border text-center">
-              <div className="font-display font-black text-foreground text-3xl leading-none mb-1">
+            <div className="bg-white p-2.5 rounded-2xl shadow-lg border border-border text-center min-w-[72px]">
+              <div className="font-display font-black text-foreground text-2xl leading-none mb-1">
                 {stop.overallRating ? stop.overallRating.toFixed(1) : '—'}
               </div>
               <FlushRating rating={stop.overallRating} size="sm" showNumber={false} />
-              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-2">
+              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1.5">
                 {stop.totalRatings} {stop.totalRatings === 1 ? 'rating' : 'ratings'}
               </div>
             </div>
