@@ -323,17 +323,42 @@ export default function AddStop() {
 
       <form onSubmit={form.handleSubmit(onSubmit)} className="p-4 flex flex-col gap-5 pb-32">
 
-        <div className="bg-blue-50 text-blue-800 p-4 rounded-2xl font-medium text-sm border border-blue-100 flex items-start gap-2">
-          <MapPin className="w-4 h-4 mt-0.5 shrink-0" />
-          <span>Search by name or address — we'll find the exact location for you.</span>
-        </div>
-
-        {/* Location Search */}
-        <div className="bg-white p-5 rounded-3xl shadow-sm border border-border flex flex-col gap-2">
+        {/* Location — GPS primary, search secondary */}
+        <div className="bg-white p-5 rounded-3xl shadow-sm border border-border flex flex-col gap-3">
           <label className="font-display font-bold text-base text-foreground">
             Find Location <span className="text-red-500">*</span>
           </label>
-          <p className="text-xs text-muted-foreground -mt-1">
+
+          {/* Primary CTA — use GPS */}
+          {!selectedPlace && (
+            <button
+              type="button"
+              onClick={useMyLocation}
+              disabled={locatingMe}
+              className="w-full flex items-center justify-center gap-2 bg-primary text-white rounded-2xl px-4 py-3.5 font-bold text-sm shadow-sm shadow-primary/30 hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-60"
+            >
+              {locatingMe
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <Navigation className="w-4 h-4" />
+              }
+              {locatingMe ? "Getting your location…" : "I'm here right now — use my GPS"}
+            </button>
+          )}
+
+          {locateError && (
+            <p className="text-red-500 text-xs">{locateError}</p>
+          )}
+
+          {/* Divider */}
+          {!selectedPlace && (
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-px bg-border" />
+              <span className="text-xs text-muted-foreground">or search by name</span>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+          )}
+
+          <p className="text-xs text-muted-foreground -mt-1 hidden">
             Type a name like "Pilot Flying J" or "McDonald's I-80" to search
           </p>
 
