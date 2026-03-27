@@ -3,12 +3,12 @@ import { Layout } from "@/components/layout";
 import { MapView } from "@/components/map-view";
 import { useLocation } from "@/hooks/use-location";
 import { useGetStops } from "@workspace/api-client-react";
-import { Search, Loader2, Map as MapIcon, List, Trophy, Plus, LocateFixed, CheckCircle, X, MapPin } from "lucide-react";
+import { Search, Loader2, Map as MapIcon, List, Trophy, Plus, LocateFixed, CheckCircle, X, MapPin, PenLine, Route } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
 import { FlushRating } from "@/components/flush-rating";
 
-type ViewMode = "map" | "list" | "top";
+type ViewMode = "map" | "list" | "route" | "top";
 
 interface GeoResult { lat: number; lng: number; label: string; }
 
@@ -50,6 +50,62 @@ function haversineKm(
 }
 
 const RADIUS_KM = 300;
+const ROUTE_BUFFER_KM = 24.14; // 15 miles
+
+// Geocode a city/address to lat/lng (single best result)
+async function geocodeOne(q: string): Promise<{ lat: number; lng: number } | null> {
+  const results = await geocodeSuggest(q);
+  if (results.length === 0) return null;
+  return { lat: results[0].lat, lng: results[0].lng };
+}
+
+// Fetch driving route from OSRM between two points (returns [lat, lng][] polyline)
+async function fetchOsrmRoute(
+  start: { lat: number; lng: number },
+  end: { lat: number; lng: number }
+): Promise<[number, number][] | null> {
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!data.routes?.[0]?.geometry?.coordinates) return null;
+    // GeoJSON coords are [lng, lat] → convert to [lat, lng] for Leaflet
+    return data.routes[0].geometry.coordinates.map(([lng, lat]: [number, number]) => [lat, lng] as [number, number]);
+  } catch { return null; }
+}
+
+// Perpendicular distance from point P to segment AB in km
+function pointToSegmentKm(
+  pLat: number, pLng: number,
+  aLat: number, aLng: number,
+  bLat: number, bLng: number
+): number {
+  const abLat = bLat - aLat; const abLng = bLng - aLng;
+  const apLat = pLat - aLat; const apLng = pLng - aLng;
+  const lenSq = abLat * abLat + abLng * abLng;
+  const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, (apLat * abLat + apLng * abLng) / lenSq));
+  const closestLat = aLat + t * abLat;
+  const closestLng = aLng + t * abLng;
+  return haversineKm(pLat, pLng, closestLat, closestLng);
+}
+
+// Filter stops within ROUTE_BUFFER_KM of the polyline
+function filterStopsNearRoute(
+  stops: { lat: number; lng: number; [k: string]: any }[],
+  polyline: [number, number][]
+): typeof stops {
+  return stops.filter((stop) => {
+    for (let i = 0; i < polyline.length - 1; i++) {
+      const d = pointToSegmentKm(
+        stop.lat, stop.lng,
+        polyline[i][0], polyline[i][1],
+        polyline[i + 1][0], polyline[i + 1][1]
+      );
+      if (d <= ROUTE_BUFFER_KM) return true;
+    }
+    return false;
+  });
+}
 
 export default function Home() {
   const { location } = useLocation();
@@ -137,17 +193,64 @@ export default function Home() {
     { query: { keepPreviousData: true } }
   );
 
-  // Client-side proximity filter: within 300km of searchCenter; sorted nearest-first when searching
+  // Route search state — declared after allStops so callback can reference it
+  const [routeFrom, setRouteFrom] = useState("");
+  const [routeTo, setRouteTo] = useState("");
+  const [routeSearching, setRouteSearching] = useState(false);
+  const [routeError, setRouteError] = useState<string | null>(null);
+  const [routePolyline, setRoutePolyline] = useState<[number, number][] | null>(null);
+  const [routeStops, setRouteStops] = useState<NonNullable<typeof allStops> | null>(null);
+
+  const findStopsAlongRoute = useCallback(async () => {
+    if (!routeFrom.trim() || !routeTo.trim()) {
+      setRouteError("Enter both a start and end city.");
+      return;
+    }
+    if (!allStops || allStops.length === 0) {
+      setRouteError("Stop data not loaded yet — try again in a moment.");
+      return;
+    }
+    setRouteSearching(true);
+    setRouteError(null);
+    setRoutePolyline(null);
+    setRouteStops(null);
+    try {
+      const [start, end] = await Promise.all([geocodeOne(routeFrom), geocodeOne(routeTo)]);
+      if (!start) { setRouteError(`Couldn't find "${routeFrom}" — try a city + state.`); return; }
+      if (!end) { setRouteError(`Couldn't find "${routeTo}" — try a city + state.`); return; }
+      const polyline = await fetchOsrmRoute(start, end);
+      if (!polyline) { setRouteError("Couldn't compute a driving route between those cities."); return; }
+      const nearby = filterStopsNearRoute(allStops, polyline);
+      setRoutePolyline(polyline);
+      setRouteStops(nearby);
+    } catch {
+      setRouteError("Something went wrong. Please try again.");
+    } finally {
+      setRouteSearching(false);
+    }
+  }, [routeFrom, routeTo, allStops]);
+
+  // Client-side proximity filter: within 300km of searchCenter; sorted nearest-first when searching.
+  // Falls back to GPS location for sort-by-distance in list/leaderboard views even without explicit search.
   const stops = (() => {
     if (!allStops) return undefined;
     const center = searchCenter;
-    if (!center) return allStops;
-    return allStops
-      .filter((s) => haversineKm(center.lat, center.lng, s.lat, s.lng) <= RADIUS_KM)
-      .sort((a, b) =>
-        haversineKm(center.lat, center.lng, a.lat, a.lng) -
-        haversineKm(center.lat, center.lng, b.lat, b.lng)
+    if (center) {
+      return allStops
+        .filter((s) => haversineKm(center.lat, center.lng, s.lat, s.lng) <= RADIUS_KM)
+        .sort((a, b) =>
+          haversineKm(center.lat, center.lng, a.lat, a.lng) -
+          haversineKm(center.lat, center.lng, b.lat, b.lng)
+        );
+    }
+    // Sort by GPS location when available (no radius filter applied — show all stops)
+    if (location) {
+      return [...allStops].sort((a, b) =>
+        haversineKm(location.lat, location.lng, a.lat, a.lng) -
+        haversineKm(location.lat, location.lng, b.lat, b.lng)
       );
+    }
+    return allStops;
   })();
 
   // Apply type + rating filters on top of proximity-filtered stops
@@ -171,9 +274,23 @@ export default function Home() {
     .sort((a, b) => (a.overallRating ?? 0) - (b.overallRating ?? 0))
     .slice(0, 5);
 
+  // Quick-rate prompt: check sessionStorage for a stop visited without rating
+  const [pendingRate, setPendingRate] = useState<{ id: number; name: string } | null>(null);
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("cantholdit_pending_rate");
+      if (raw) setPendingRate(JSON.parse(raw));
+    } catch { /* ignore */ }
+  }, []);
+  const dismissPendingRate = () => {
+    setPendingRate(null);
+    try { sessionStorage.removeItem("cantholdit_pending_rate"); } catch { /* ignore */ }
+  };
+
   const tabs: { id: ViewMode; icon: typeof MapIcon; label: string }[] = [
     { id: "map", icon: MapIcon, label: "Map" },
     { id: "list", icon: List, label: "List" },
+    { id: "route", icon: Route, label: "Route" },
     { id: "top", icon: Trophy, label: "Top" },
   ];
 
@@ -353,6 +470,42 @@ export default function Home() {
         )}
       </div>
 
+      {/* Quick-rate prompt banner */}
+      <AnimatePresence>
+        {pendingRate && (
+          <motion.div
+            initial={{ opacity: 0, y: 80 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 80 }}
+            transition={{ type: "spring", stiffness: 280, damping: 25 }}
+            className="absolute bottom-6 left-4 right-4 z-[450] pointer-events-auto"
+            style={{ bottom: viewMode !== "top" ? "5.5rem" : "1.5rem" }}
+          >
+            <div className="bg-white rounded-2xl shadow-xl border border-border p-4 flex items-center gap-3">
+              <div className="text-2xl shrink-0">🚽</div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-muted-foreground font-medium">Just visited?</p>
+                <p className="text-sm font-bold text-foreground truncate">{pendingRate.name}</p>
+              </div>
+              <Link href={`/stop/${pendingRate.id}/rate`} onClick={dismissPendingRate}>
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  className="shrink-0 flex items-center gap-1.5 bg-primary text-white px-3 py-2 rounded-xl text-xs font-bold shadow-sm shadow-primary/30"
+                >
+                  <PenLine className="w-3.5 h-3.5" /> Rate it
+                </motion.button>
+              </Link>
+              <button
+                onClick={dismissPendingRate}
+                className="shrink-0 p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 transition-colors"
+              >
+                <X className="w-3.5 h-3.5 text-slate-500" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Floating Add Stop button */}
       {viewMode !== "top" && (
         <Link href="/add-stop">
@@ -392,9 +545,10 @@ export default function Home() {
               className="absolute inset-0"
             >
               <MapView
-                stops={filteredStops || []}
+                stops={routeStops && routePolyline ? routeStops : (filteredStops || [])}
                 userLocation={location}
                 searchCenter={searchCenter}
+                routePolyline={routePolyline}
               />
 
               {/* Empty state overlay — no stops within 800km of search */}
@@ -513,6 +667,118 @@ export default function Home() {
                     </Link>
                   );
                 })
+              )}
+            </motion.div>
+          )}
+
+          {/* ROUTE SEARCH */}
+          {viewMode === "route" && (
+            <motion.div
+              key="route"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="absolute inset-0 bg-background overflow-y-auto pt-24 pb-8 px-4 flex flex-col gap-4"
+            >
+              <div className="flex items-center justify-center pt-1">
+                <span className="text-[11px] font-bold text-muted-foreground/60 tracking-wide">
+                  🗺️ Stops Along Your Drive
+                </span>
+              </div>
+
+              {/* Route inputs */}
+              <div className="bg-white rounded-3xl p-4 shadow-sm border border-border flex flex-col gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-3 h-3 rounded-full bg-green-500 shrink-0 border-2 border-white shadow" />
+                  <input
+                    type="text"
+                    placeholder="Start city (e.g. Nashville, TN)"
+                    value={routeFrom}
+                    onChange={(e) => setRouteFrom(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && findStopsAlongRoute()}
+                    className="flex-1 bg-slate-50 rounded-xl px-3 py-2.5 text-sm font-medium border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  />
+                </div>
+                <div className="w-0.5 h-4 bg-slate-200 ml-[5px]" />
+                <div className="flex items-center gap-3">
+                  <div className="w-3 h-3 rounded-full bg-red-500 shrink-0 border-2 border-white shadow" />
+                  <input
+                    type="text"
+                    placeholder="End city (e.g. Atlanta, GA)"
+                    value={routeTo}
+                    onChange={(e) => setRouteTo(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && findStopsAlongRoute()}
+                    className="flex-1 bg-slate-50 rounded-xl px-3 py-2.5 text-sm font-medium border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  />
+                </div>
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  disabled={routeSearching || !routeFrom.trim() || !routeTo.trim()}
+                  onClick={findStopsAlongRoute}
+                  className="w-full bg-gradient-to-r from-primary to-blue-500 text-white py-3 rounded-xl font-bold text-sm shadow-md shadow-primary/30 flex items-center justify-center gap-2 disabled:opacity-50 mt-1"
+                >
+                  {routeSearching
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Finding stops...</>
+                    : <><Route className="w-4 h-4" /> Find Stops Along Route</>
+                  }
+                </motion.button>
+                {routeError && (
+                  <p className="text-sm text-red-500 font-medium text-center">{routeError}</p>
+                )}
+              </div>
+
+              {/* Results */}
+              {routeStops !== null && !routeSearching && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-display font-bold text-base text-foreground">
+                      {routeStops.length} stop{routeStops.length !== 1 ? "s" : ""} within 15 miles
+                    </h3>
+                    <button
+                      onClick={() => setViewMode("map")}
+                      className="text-xs font-bold text-primary bg-primary/10 px-3 py-1.5 rounded-full"
+                    >
+                      View on Map
+                    </button>
+                  </div>
+
+                  {routeStops.length === 0 ? (
+                    <div className="text-center py-12 flex flex-col items-center gap-3">
+                      <div className="text-5xl grayscale opacity-40">🌵</div>
+                      <p className="font-display font-bold text-foreground">No stops along this route</p>
+                      <p className="text-muted-foreground text-sm">Be the first to add one!</p>
+                      <Link href="/add-stop">
+                        <motion.div whileTap={{ scale: 0.97 }} className="bg-primary text-white px-5 py-3 rounded-xl font-bold text-sm flex items-center gap-2">
+                          <Plus className="w-4 h-4" /> Add a Stop
+                        </motion.div>
+                      </Link>
+                    </div>
+                  ) : (
+                    routeStops.map((stop) => (
+                      <Link key={stop.id} href={`/stop/${stop.id}`}>
+                        <div className="bg-card rounded-2xl p-4 shadow-sm border border-border/50 hover:shadow-md hover:border-primary/30 transition-all active:scale-[0.98]">
+                          <div className="flex justify-between items-start mb-1">
+                            <h3 className="font-display font-bold text-base text-foreground leading-tight flex-1 pr-2">{stop.name}</h3>
+                            <div className="bg-slate-50 px-2 py-1 rounded-lg border border-slate-100 flex flex-col items-center shrink-0">
+                              <span className="text-sm font-bold text-foreground">{stop.overallRating?.toFixed(1) || "—"}</span>
+                              <span className="text-[10px] text-muted-foreground">{stop.totalRatings} rev</span>
+                            </div>
+                          </div>
+                          <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-1">{stop.type.replace("_", " ")}</p>
+                          <p className="text-sm text-foreground/70 truncate">{stop.address}</p>
+                        </div>
+                      </Link>
+                    ))
+                  )}
+                </>
+              )}
+
+              {/* Hint when no search yet */}
+              {routeStops === null && !routeSearching && !routeError && (
+                <div className="text-center py-12 flex flex-col items-center gap-3 text-muted-foreground">
+                  <Route className="w-12 h-12 opacity-20" />
+                  <p className="font-medium text-sm">Enter a start and end city above to find restrooms, rest areas, and gas stations along your route.</p>
+                </div>
               )}
             </motion.div>
           )}

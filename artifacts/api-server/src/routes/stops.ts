@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, avg, count, sql } from "drizzle-orm";
-import { db, stopsTable, ratingsTable, photosTable } from "@workspace/db";
+import { db, stopsTable, ratingsTable, photosTable, reportsTable } from "@workspace/db";
 import {
   GetStopsQueryParams,
   GetStopsResponse,
@@ -47,6 +47,7 @@ router.get("/stops", async (req, res): Promise<void> => {
       lat: stopsTable.lat,
       lng: stopsTable.lng,
       hours: stopsTable.hours,
+      amenities: stopsTable.amenities,
       createdAt: stopsTable.createdAt,
       overallRating: avg(
         sql`(${ratingsTable.cleanliness} + ${ratingsTable.smell} + ${ratingsTable.paperSupply} + ${ratingsTable.lighting} + ${ratingsTable.safety} + ${ratingsTable.familyFriendly}) / 6.0`
@@ -64,6 +65,8 @@ router.get("/stops", async (req, res): Promise<void> => {
     const overallRating = s.overallRating ? parseFloat(String(s.overallRating)) : null;
     const totalRatings = Number(s.totalRatings);
     const isTopReviewed = totalRatings > 0 && totalRatings === maxReviews;
+    let amenities: string[] = [];
+    try { amenities = JSON.parse(s.amenities || "[]"); } catch { amenities = []; }
     return {
       id: s.id,
       name: s.name,
@@ -73,6 +76,7 @@ router.get("/stops", async (req, res): Promise<void> => {
       lng: s.lng,
       overallRating,
       totalRatings,
+      amenities,
       badges: computeBadges(overallRating, totalRatings, isTopReviewed),
       createdAt: s.createdAt,
     };
@@ -124,6 +128,7 @@ router.get("/stops/:id", async (req, res): Promise<void> => {
       lat: stopsTable.lat,
       lng: stopsTable.lng,
       hours: stopsTable.hours,
+      amenities: stopsTable.amenities,
       createdAt: stopsTable.createdAt,
       overallRating: avg(
         sql`(${ratingsTable.cleanliness} + ${ratingsTable.smell} + ${ratingsTable.paperSupply} + ${ratingsTable.lighting} + ${ratingsTable.safety} + ${ratingsTable.familyFriendly}) / 6.0`
@@ -156,6 +161,8 @@ router.get("/stops/:id", async (req, res): Promise<void> => {
   const parseAvg = (val: unknown) => (val ? parseFloat(String(val)) : null);
   const overallRating = parseAvg(stopWithStats.overallRating);
   const totalRatings = Number(stopWithStats.totalRatings);
+  let amenities: string[] = [];
+  try { amenities = JSON.parse(stopWithStats.amenities || "[]"); } catch { amenities = []; }
 
   const formattedRatings = recentRatings.map((r) => ({
     ...r,
@@ -177,6 +184,7 @@ router.get("/stops/:id", async (req, res): Promise<void> => {
     lat: stopWithStats.lat,
     lng: stopWithStats.lng,
     hours: stopWithStats.hours ?? null,
+    amenities,
     overallRating,
     totalRatings,
     badges: computeBadges(overallRating, totalRatings, false),
@@ -283,6 +291,41 @@ router.post("/stops/:id/photos", async (req, res): Promise<void> => {
   if (!stop) { res.status(404).json({ error: "Stop not found" }); return; }
   const [photo] = await db.insert(photosTable).values({ stopId: id, objectPath }).returning();
   res.status(201).json({ ...photo, url: `/api/storage${photo.objectPath}` });
+});
+
+// PATCH /stops/:id/amenities — community-toggle amenities list
+router.patch("/stops/:id/amenities", async (req, res): Promise<void> => {
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid stop id" }); return; }
+  const { amenities } = req.body as { amenities?: unknown };
+  if (!Array.isArray(amenities) || amenities.some((a) => typeof a !== "string")) {
+    res.status(400).json({ error: "amenities must be a string array" });
+    return;
+  }
+  const [stop] = await db.select({ id: stopsTable.id }).from(stopsTable).where(eq(stopsTable.id, id));
+  if (!stop) { res.status(404).json({ error: "Stop not found" }); return; }
+  await db.update(stopsTable).set({ amenities: JSON.stringify(amenities) }).where(eq(stopsTable.id, id));
+  res.json({ amenities });
+});
+
+// POST /stops/:id/report — report a problem with a stop
+router.post("/stops/:id/report", async (req, res): Promise<void> => {
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid stop id" }); return; }
+  const { reportType, comment } = req.body as { reportType?: string; comment?: string };
+  const validTypes = ["permanently_closed", "temporarily_closed", "wrong_location", "wrong_info", "other"];
+  if (!reportType || !validTypes.includes(reportType)) {
+    res.status(400).json({ error: `reportType must be one of: ${validTypes.join(", ")}` });
+    return;
+  }
+  const [stop] = await db.select({ id: stopsTable.id }).from(stopsTable).where(eq(stopsTable.id, id));
+  if (!stop) { res.status(404).json({ error: "Stop not found" }); return; }
+  const [report] = await db.insert(reportsTable).values({
+    stopId: id,
+    reportType: reportType as any,
+    comment: comment?.trim() || null,
+  }).returning();
+  res.status(201).json(report);
 });
 
 export default router;

@@ -100,20 +100,26 @@ Utility scripts package. Each script is a `.ts` file in `src/` with a correspond
 Community-rated restroom and rest stop finder for US road trippers. Tagline: "Because nature doesn't wait."
 
 ### Features
-- **Map view**: Leaflet.js + `leaflet.markercluster` for clustered 🚽 pins, color-coded by rating (green ≥4.0, amber 3.0–3.9, red <3.0, gray unrated). Blue number clusters collapse dense areas. Filter chips affect map markers.
-- **List view**: Card list sorted nearest-first when search active. Shows verified badge (CheckCircle) for stops with 10+ ratings. Horizontal filter chips for type + minimum rating.
+- **Map view**: Leaflet.js + `leaflet.markercluster` for clustered 🚽 pins, color-coded by rating (green ≥4.0, amber 3.0–3.9, red <3.0, gray unrated). Blue number clusters collapse dense areas. Filter chips affect map markers. Route polyline overlay drawn when route search is active.
+- **List view**: Card list sorted nearest-first (GPS sort even without explicit search). Shows verified badge (CheckCircle) for stops with 10+ ratings. Horizontal filter chips for type + minimum rating.
+- **Route search (Route tab)**: Enter start + end city → Nominatim geocodes both → OSRM driving route → filters stops within 15 miles of polyline. Shows results as list + draws route on map with blue polyline. "View on Map" button switches to map view showing the route.
 - **Leaderboard (Top view)**: Royal Flush (top 5 ≥4.0) + Biohazard Zone (worst 5) derived from all stops.
 - **Search**: Nominatim geocoding with disambiguation dropdown. "Find Near Me" GPS crosshair. 300km proximity radius. `skipGeocodeRef` prevents "Near me" text from geocoding.
 - **Stop Detail**: Share button (Web Share API + clipboard fallback), verified badge (10+ ratings), photo gallery with upload (object storage), Get Directions (Google Maps), Flush Breakdown grid, Reviews.
+- **Amenity tags (Stop Detail)**: 12 tap-to-toggle amenity chips (♿ Accessible, 👶 Baby Changing, 🚿 Shower, etc.). Community-toggled via PATCH /stops/:id/amenities. Optimistic UI.
+- **Report a problem (Stop Detail)**: Flag button opens bottom-sheet modal with 5 report types (permanently closed, temporarily closed, wrong location, wrong info, other) + optional comment. Submitted via POST /stops/:id/report.
+- **Quick-rate prompt**: After viewing a stop detail, sessionStorage saves the stop. On returning to home screen a floating banner appears: "Just visited? [Name] — Rate it" button. Dismissed on tap or X.
 - **Filter chips**: Type (All/Rest Area/Gas/Truck/Food) + rating (Any/3★+/4★+) chips. Shown in map + list views.
 - **Photo uploads**: File input → POST `/api/storage/uploads/request-url` → PUT presigned URL → POST `/api/stops/:id/photos`. Stored in Replit object storage.
 - **Add Stop**: Form to contribute new restroom locations.
 - **Rating form**: 6-category flush rating (cleanliness, odor, TP supply, lighting, safety, family-friendly).
 
 ### API Routes
-- `GET /api/stops` — list all stops with aggregate ratings, badges, recent reviews
-- `GET /api/stops/:id` — single stop detail
+- `GET /api/stops` — list all stops with aggregate ratings, badges, amenities
+- `GET /api/stops/:id` — single stop detail (includes amenities)
 - `POST /api/stops` — add new stop
+- `PATCH /api/stops/:id/amenities` — community update amenities list
+- `POST /api/stops/:id/report` — submit a problem report
 - `GET /api/stops/:id/ratings` — reviews for a stop
 - `POST /api/stops/:id/ratings` — submit a rating
 - `GET /api/stops/:id/photos` — photo list (with `/api/storage` URL prefix)
@@ -123,9 +129,10 @@ Community-rated restroom and rest stop finder for US road trippers. Tagline: "Be
 - `GET /api/storage/public-objects/*` — serve public objects unconditionally
 
 ### DB Schema
-- `stops` — name, type, lat/lng, address, notes
+- `stops` — name, type, lat/lng, address, notes, amenities (JSON text array, default '[]')
 - `ratings` — 6 numeric columns + comment, FK to stops
 - `photos` — objectPath, FK to stops (cascade delete)
+- `stop_reports` — reportType enum (permanently_closed/temporarily_closed/wrong_location/wrong_info/other), optional comment, FK to stops
 
 ### Admin Seed Endpoint (HIFLD Import)
 

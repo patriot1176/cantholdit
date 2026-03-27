@@ -3,12 +3,26 @@ import { useGetStop } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout";
 import { FlushRating } from "@/components/flush-rating";
-import { ArrowLeft, MapPin, ShieldCheck, Sparkles, Wind, Lightbulb, Baby, PenLine, AlertTriangle, Navigation, Share2, CheckCircle, Camera, Loader2, ImageOff } from "lucide-react";
+import { ArrowLeft, MapPin, ShieldCheck, Sparkles, Wind, Lightbulb, Baby, PenLine, AlertTriangle, Navigation, Share2, CheckCircle, Camera, Loader2, ImageOff, Flag, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { motion } from "framer-motion";
-import { useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useRef, useState, useEffect } from "react";
 
 interface StopPhoto { id: number; stopId: number; objectPath: string; url: string; }
+
+const ALL_AMENITIES = [
+  "♿ Accessible", "👶 Baby Changing", "🚿 Shower", "🐕 Pet-Friendly",
+  "☕ Vending", "🅿️ Parking", "🌳 Picnic Area", "⛽ Gas Station",
+  "🍔 Food Nearby", "💦 Water Fountain", "🔌 EV Charging", "🛏️ Rest Area",
+];
+
+const REPORT_TYPES = [
+  { value: "permanently_closed", label: "Permanently closed" },
+  { value: "temporarily_closed", label: "Temporarily closed" },
+  { value: "wrong_location", label: "Wrong location" },
+  { value: "wrong_info", label: "Incorrect info" },
+  { value: "other", label: "Other problem" },
+];
 
 export default function StopDetail() {
   const [, params] = useRoute("/stop/:id");
@@ -31,6 +45,60 @@ export default function StopDetail() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [shareMsg, setShareMsg] = useState<string | null>(null);
+
+  // Amenities local state (optimistic)
+  const [localAmenities, setLocalAmenities] = useState<string[] | null>(null);
+  const [amenitySaving, setAmenitySaving] = useState(false);
+  const amenities = localAmenities ?? stop?.amenities ?? [];
+
+  // Report modal
+  const [showReport, setShowReport] = useState(false);
+  const [reportType, setReportType] = useState("permanently_closed");
+  const [reportComment, setReportComment] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportSuccess, setReportSuccess] = useState(false);
+
+  // Save stop to sessionStorage for quick-rate prompt on home screen
+  useEffect(() => {
+    if (stop && id > 0) {
+      try {
+        sessionStorage.setItem("cantholdit_pending_rate", JSON.stringify({ id: stop.id, name: stop.name }));
+      } catch { /* ignore */ }
+    }
+  }, [stop, id]);
+
+  const toggleAmenity = async (amenity: string) => {
+    if (!stop) return;
+    const current = amenities;
+    const next = current.includes(amenity)
+      ? current.filter((a) => a !== amenity)
+      : [...current, amenity];
+    setLocalAmenities(next);
+    setAmenitySaving(true);
+    try {
+      await fetch(`/api/stops/${stop.id}/amenities`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amenities: next }),
+      });
+      queryClient.invalidateQueries({ queryKey: ["stops", stop.id] });
+    } catch { /* revert on failure */ setLocalAmenities(current); }
+    setAmenitySaving(false);
+  };
+
+  const submitReport = async () => {
+    setReportSubmitting(true);
+    try {
+      await fetch(`/api/stops/${id}/report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reportType, comment: reportComment.trim() || undefined }),
+      });
+      setReportSuccess(true);
+      setTimeout(() => { setShowReport(false); setReportSuccess(false); setReportComment(""); }, 2000);
+    } catch { /* no-op */ }
+    setReportSubmitting(false);
+  };
 
   const handleShare = async () => {
     const url = window.location.href;
@@ -125,20 +193,29 @@ export default function StopDetail() {
       >
         {/* Stop header */}
         <div className="bg-gradient-to-b from-primary/10 to-background pb-6 pt-4 px-4 border-b border-border/50">
-          {/* Top row: back + share */}
+          {/* Top row: back + actions */}
           <div className="flex items-center justify-between mb-4">
             <Link href="/" className="inline-flex items-center text-primary font-bold text-sm bg-white/80 px-3 py-1.5 rounded-full shadow-sm">
               <ArrowLeft className="w-4 h-4 mr-1.5" /> Map
             </Link>
-            <button
-              onClick={handleShare}
-              className="inline-flex items-center gap-1.5 text-primary font-bold text-sm bg-white/80 px-3 py-1.5 rounded-full shadow-sm hover:bg-white active:scale-95 transition-all"
-            >
-              {shareMsg
-                ? <><CheckCircle className="w-4 h-4 text-green-500" /> {shareMsg}</>
-                : <><Share2 className="w-4 h-4" /> Share</>
-              }
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowReport(true)}
+                className="inline-flex items-center gap-1.5 text-red-500 font-bold text-sm bg-white/80 px-3 py-1.5 rounded-full shadow-sm hover:bg-white active:scale-95 transition-all"
+                aria-label="Report a problem"
+              >
+                <Flag className="w-3.5 h-3.5" /> Report
+              </button>
+              <button
+                onClick={handleShare}
+                className="inline-flex items-center gap-1.5 text-primary font-bold text-sm bg-white/80 px-3 py-1.5 rounded-full shadow-sm hover:bg-white active:scale-95 transition-all"
+              >
+                {shareMsg
+                  ? <><CheckCircle className="w-4 h-4 text-green-500" /> {shareMsg}</>
+                  : <><Share2 className="w-4 h-4" /> Share</>
+                }
+              </button>
+            </div>
           </div>
 
           <div className="flex justify-between items-start gap-3">
@@ -257,6 +334,33 @@ export default function StopDetail() {
             )}
           </div>
 
+          {/* Amenities */}
+          <div className="bg-white rounded-3xl p-5 shadow-sm border border-border">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-display font-bold text-lg">Amenities</h3>
+              {amenitySaving && <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />}
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">Tap to confirm or add what's here</p>
+            <div className="flex flex-wrap gap-2">
+              {ALL_AMENITIES.map((a) => {
+                const active = amenities.includes(a);
+                return (
+                  <button
+                    key={a}
+                    onClick={() => toggleAmenity(a)}
+                    className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all active:scale-95 ${
+                      active
+                        ? "bg-primary text-white border-primary shadow-sm shadow-primary/30"
+                        : "bg-slate-50 text-slate-600 border-slate-200 hover:border-primary/50"
+                    }`}
+                  >
+                    {a}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Categories Grid */}
           <div className="bg-white rounded-3xl p-5 shadow-sm border border-border">
             <h3 className="font-display font-bold text-lg mb-4">Flush Breakdown</h3>
@@ -322,6 +426,78 @@ export default function StopDetail() {
 
         </div>
       </div>
+
+      {/* Report Problem Modal */}
+      <AnimatePresence>
+        {showReport && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[500] bg-black/50 flex items-end justify-center"
+            onClick={(e) => { if (e.target === e.currentTarget) setShowReport(false); }}
+          >
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              className="bg-white w-full max-w-lg rounded-t-3xl p-6 shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="font-display text-xl font-bold text-red-600 flex items-center gap-2">
+                  <Flag className="w-5 h-5" /> Report a Problem
+                </h2>
+                <button onClick={() => setShowReport(false)} className="p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 transition-colors">
+                  <X className="w-4 h-4 text-slate-500" />
+                </button>
+              </div>
+
+              {reportSuccess ? (
+                <div className="flex flex-col items-center py-8 gap-3">
+                  <div className="text-5xl">✅</div>
+                  <p className="font-display text-lg font-bold text-foreground">Thanks for the heads up!</p>
+                  <p className="text-muted-foreground text-sm text-center">Our community moderators will review this report.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-2 mb-4">
+                    {REPORT_TYPES.map((t) => (
+                      <button
+                        key={t.value}
+                        onClick={() => setReportType(t.value)}
+                        className={`w-full text-left px-4 py-3 rounded-xl border font-medium text-sm transition-all ${
+                          reportType === t.value
+                            ? "border-red-400 bg-red-50 text-red-700"
+                            : "border-border bg-slate-50 text-slate-600 hover:border-slate-300"
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    value={reportComment}
+                    onChange={(e) => setReportComment(e.target.value)}
+                    placeholder="Optional: add more details..."
+                    rows={3}
+                    className="w-full border border-border rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-red-400/50 mb-4"
+                  />
+                  <motion.button
+                    whileTap={{ scale: 0.97 }}
+                    disabled={reportSubmitting}
+                    onClick={submitReport}
+                    className="w-full bg-red-500 text-white py-3.5 rounded-xl font-bold text-base disabled:opacity-60 flex items-center justify-center gap-2"
+                  >
+                    {reportSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Flag className="w-4 h-4" />}
+                    {reportSubmitting ? "Submitting..." : "Submit Report"}
+                  </motion.button>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </Layout>
   );
 }

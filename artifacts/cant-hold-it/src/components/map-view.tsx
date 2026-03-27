@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet.markercluster";
 import "leaflet.markercluster/dist/MarkerCluster.css";
@@ -122,10 +122,12 @@ export function MapView({
   stops,
   userLocation,
   searchCenter,
+  routePolyline,
 }: {
   stops: Stop[];
   userLocation: { lat: number; lng: number } | null;
   searchCenter: { lat: number; lng: number } | null;
+  routePolyline?: [number, number][] | null;
 }) {
   const mapRef = useRef<L.Map | null>(null);
   const [, navigate] = useWouterLocation();
@@ -138,6 +140,14 @@ export function MapView({
       });
     }
   }, [searchCenter]);
+
+  // Fit map to route polyline when route is computed
+  useEffect(() => {
+    if (routePolyline && routePolyline.length > 1 && mapRef.current) {
+      const bounds = L.latLngBounds(routePolyline);
+      mapRef.current.flyToBounds(bounds, { padding: [40, 40], duration: 1.2 });
+    }
+  }, [routePolyline]);
 
   // Silently fly to GPS location once if it comes in and no search has been done
   const hasFlewToUser = useRef(false);
@@ -177,6 +187,14 @@ export function MapView({
               iconSize: [14, 14],
               iconAnchor: [7, 7],
             })}
+          />
+        )}
+
+        {/* Route polyline */}
+        {routePolyline && routePolyline.length > 1 && (
+          <Polyline
+            positions={routePolyline}
+            pathOptions={{ color: "#3b82f6", weight: 4, opacity: 0.75, dashArray: undefined }}
           />
         )}
 

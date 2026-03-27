@@ -18,6 +18,7 @@ export const stopsTable = pgTable("stops", {
   lat: real("lat").notNull(),
   lng: real("lng").notNull(),
   hours: text("hours"),
+  amenities: text("amenities").default("[]").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
