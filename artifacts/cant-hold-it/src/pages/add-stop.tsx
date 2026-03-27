@@ -66,30 +66,86 @@ async function fetchNominatim(q: string, extra: string): Promise<any[]> {
   }
 }
 
+// Photon (komoot) — better US POI/restaurant coverage than Nominatim
+async function fetchPhoton(
+  q: string,
+  userLocation?: { lat: number; lng: number } | null
+): Promise<GeoSuggestion[]> {
+  try {
+    const locParam = userLocation
+      ? `&lat=${userLocation.lat}&lon=${userLocation.lng}`
+      : "";
+    const res = await fetch(
+      `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=10&lang=en${locParam}`,
+      { headers: { "Accept-Language": "en" } }
+    );
+    const data = await res.json();
+    return (data.features as any[])
+      .filter((f) => {
+        const cc = f.properties?.countrycode;
+        return cc === "US" || cc === "us";
+      })
+      .map((f) => {
+        const [lng, lat] = f.geometry.coordinates as [number, number];
+        const p = f.properties;
+        const parts = [p.name, p.street, p.city, p.state].filter(Boolean);
+        const label = parts.slice(0, 3).join(", ");
+        const address = parts.join(", ");
+        const distKm = userLocation
+          ? haversineKm(userLocation.lat, userLocation.lng, lat, lng)
+          : null;
+        return { lat, lng, label: label || address, address, distKm };
+      });
+  } catch {
+    return [];
+  }
+}
+
+// Deduplicate by proximity (within 0.5km = same place)
+function dedupeByProximity(results: GeoSuggestion[]): GeoSuggestion[] {
+  const out: GeoSuggestion[] = [];
+  for (const r of results) {
+    const dup = out.some(
+      (o) => haversineKm(o.lat, o.lng, r.lat, r.lng) < 0.5
+    );
+    if (!dup) out.push(r);
+  }
+  return out;
+}
+
 async function searchPlaces(
   q: string,
   userLocation?: { lat: number; lng: number } | null
 ): Promise<GeoSuggestion[]> {
-  const noGps = (r: ReturnType<typeof parseNominatimResults>[0]): GeoSuggestion =>
-    ({ lat: r.lat, lng: r.lng, label: r.label, address: r.address, distKm: null });
-  const withDist = (r: ReturnType<typeof parseNominatimResults>[0]): GeoSuggestion =>
-    ({ lat: r.lat, lng: r.lng, label: r.label, address: r.address, distKm: r.distKm });
+  const withDist = (r: GeoSuggestion): GeoSuggestion => r;
+  const noGps = (r: GeoSuggestion): GeoSuggestion => ({ ...r, distKm: null });
 
-  // Stage 1 — bounded: only return results within ~250 km of the user.
-  // This forces Nominatim to show local results even when national chains score higher globally.
   if (userLocation) {
+    // Run Photon (location-biased) + Nominatim (bounded viewbox) in parallel
     const delta = 2.25; // ≈ 250 km per axis
     const vb = `${userLocation.lng - delta},${userLocation.lat - delta},${userLocation.lng + delta},${userLocation.lat + delta}`;
-    const local = parseNominatimResults(
-      await fetchNominatim(q, `&limit=10&viewbox=${vb}&bounded=1`),
-      userLocation
-    );
-    if (local.length > 0) {
-      return local.sort((a, b) => a.distKm - b.distKm).slice(0, 6).map(withDist);
+    const [photonResults, nominatimLocal] = await Promise.all([
+      fetchPhoton(q, userLocation),
+      fetchNominatim(q, `&limit=10&viewbox=${vb}&bounded=1`).then((d) =>
+        parseNominatimResults(d, userLocation)
+      ),
+    ]);
+
+    // Merge: Photon first (better POI), then Nominatim, dedupe, filter to 250km
+    const merged = dedupeByProximity([
+      ...photonResults,
+      ...nominatimLocal,
+    ]).filter((r) => r.distKm != null && r.distKm <= 250);
+
+    if (merged.length > 0) {
+      return merged
+        .sort((a, b) => (a.distKm ?? Infinity) - (b.distKm ?? Infinity))
+        .slice(0, 6)
+        .map(withDist);
     }
   }
 
-  // Stage 2 — national fallback: sort by distance if we have GPS, else Nominatim order
+  // No GPS or no local results — national Nominatim fallback
   const national = parseNominatimResults(
     await fetchNominatim(q, `&limit=12`),
     userLocation
