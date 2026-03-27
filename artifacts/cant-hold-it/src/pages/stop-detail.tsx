@@ -17,7 +17,7 @@ export default function StopDetail() {
   if (isLoading) {
     return (
       <Layout>
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-pulse">
+        <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center animate-pulse">
           <div className="text-6xl mb-4">🧻</div>
           <h2 className="font-display text-2xl font-bold">Unrolling details...</h2>
         </div>
@@ -28,7 +28,7 @@ export default function StopDetail() {
   if (error || !stop) {
     return (
       <Layout>
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="absolute inset-0 overflow-y-auto p-4">
           <Link href="/" className="inline-flex items-center text-primary font-medium hover:underline mb-8">
             <ArrowLeft className="w-4 h-4 mr-2" /> Back to Map
           </Link>
@@ -57,10 +57,15 @@ export default function StopDetail() {
 
   return (
     <Layout>
-      {/* Single scroll container — everything scrolls together, no inner sticky headers */}
-      <div className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
-
-        {/* Stop header (scrolls with content) */}
+      {/*
+        absolute inset-0 gives this div an explicit pixel height equal to <main>,
+        so overflow-y-auto always has a bounded scroll height on every mobile browser.
+      */}
+      <div
+        className="absolute inset-0 overflow-y-auto"
+        style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" } as React.CSSProperties}
+      >
+        {/* Stop header */}
         <div className="bg-gradient-to-b from-primary/10 to-background pb-6 pt-4 px-4 border-b border-border/50">
           <Link href="/" className="inline-flex items-center text-primary font-bold text-sm mb-4 bg-white/80 px-3 py-1.5 rounded-full shadow-sm">
             <ArrowLeft className="w-4 h-4 mr-1.5" /> Map
@@ -95,7 +100,7 @@ export default function StopDetail() {
         </div>
 
         {/* Body content */}
-        <div className="p-4 flex flex-col gap-6 pb-10">
+        <div className="p-4 flex flex-col gap-6 pb-12">
 
           {/* Badges */}
           {badges.length > 0 && (
