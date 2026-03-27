@@ -77,12 +77,13 @@ export default function StopDetail() {
           </div>
           
           <div className="flex flex-col items-end shrink-0">
-            <div className="bg-white p-3 rounded-2xl shadow-lg border border-border text-center min-w-[80px]">
-              <div className="text-3xl font-display font-black text-foreground">
-                {stop.overallRating ? stop.overallRating.toFixed(1) : '-'}
+            <div className="bg-white p-3 rounded-2xl shadow-lg border border-border text-center">
+              <div className="font-display font-black text-foreground text-3xl leading-none mb-1">
+                {stop.overallRating ? stop.overallRating.toFixed(1) : '—'}
               </div>
-              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">
-                {stop.totalRatings} ratings
+              <FlushRating rating={stop.overallRating} size="sm" showNumber={false} />
+              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-2">
+                {stop.totalRatings} {stop.totalRatings === 1 ? 'rating' : 'ratings'}
               </div>
             </div>
           </div>

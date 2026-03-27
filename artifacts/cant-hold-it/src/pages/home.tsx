@@ -3,7 +3,7 @@ import { Layout } from "@/components/layout";
 import { MapView } from "@/components/map-view";
 import { useLocation } from "@/hooks/use-location";
 import { useGetStops } from "@workspace/api-client-react";
-import { Search, Loader2, Map as MapIcon, List } from "lucide-react";
+import { Search, Loader2, Map as MapIcon, List, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
 import { FlushRating } from "@/components/flush-rating";
@@ -42,6 +42,21 @@ export default function Home() {
           {viewMode === "map" ? <List className="w-5 h-5" /> : <MapIcon className="w-5 h-5" />}
         </button>
       </div>
+
+      {/* Floating Add Stop button */}
+      <Link href="/add-stop">
+        <motion.button
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 300, damping: 20, delay: 0.3 }}
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+          className="absolute bottom-6 left-4 z-[400] bg-primary text-white w-14 h-14 rounded-full shadow-xl shadow-primary/40 flex items-center justify-center border-2 border-white"
+          aria-label="Add a new stop"
+        >
+          <Plus className="w-7 h-7" />
+        </motion.button>
+      </Link>
 
       <div className="flex-1 relative overflow-hidden">
         {isLoading && !stops && (
