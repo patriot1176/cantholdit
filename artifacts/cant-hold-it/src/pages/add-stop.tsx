@@ -175,10 +175,18 @@ function normalizeHighway(raw: string): string | null {
   return null;
 }
 
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 async function detectHighwayFromCoords(lat: number, lng: number): Promise<string | null> {
-  // Primary: Overpass API — finds motorway/trunk ways within 8km (much more reliable)
+  // Primary: Overpass API — finds motorway/trunk ways within 8km, sorted by distance to pick the nearest
   try {
-    const q = `[out:json][timeout:8];(way[highway=motorway](around:8000,${lat},${lng});way[highway=motorway_link](around:8000,${lat},${lng});way[highway=trunk](around:8000,${lat},${lng}););out tags;`;
+    const q = `[out:json][timeout:8];(way[highway=motorway](around:8000,${lat},${lng});way[highway=motorway_link](around:8000,${lat},${lng});way[highway=trunk](around:8000,${lat},${lng}););out center tags;`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 6000);
     const res = await fetch(
@@ -188,19 +196,26 @@ async function detectHighwayFromCoords(lat: number, lng: number): Promise<string
     clearTimeout(timer);
     const data = await res.json();
     if (data.elements?.length > 0) {
-      // Prefer elements that have a ref tag (e.g. "I 75", "I 75;I 74", "US 23")
-      for (const el of data.elements) {
+      // Sort by distance from the user's coordinates using each way's center point
+      const sorted = [...data.elements].sort((a, b) => {
+        const distA = a.center ? haversineKm(lat, lng, a.center.lat, a.center.lon) : Infinity;
+        const distB = b.center ? haversineKm(lat, lng, b.center.lat, b.center.lon) : Infinity;
+        return distA - distB;
+      });
+
+      // Prefer ref tag (e.g. "I 75", "I 75;I 74", "US 23") — pick from nearest element first
+      for (const el of sorted) {
         const ref: string | undefined = el.tags?.ref;
         if (ref) {
-          // OSM refs can be semicolon-separated (e.g. "I 75;I 74")
+          // OSM refs can be semicolon-separated (e.g. "I 75;I 74") — pick first valid
           for (const part of ref.split(";")) {
             const h = normalizeHighway(part.trim());
             if (h) return h;
           }
         }
       }
-      // Fall back to name tag
-      for (const el of data.elements) {
+      // Fall back to name tag on nearest element
+      for (const el of sorted) {
         const name: string | undefined = el.tags?.name;
         if (name) {
           const h = normalizeHighway(name);
