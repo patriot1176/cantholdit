@@ -8,6 +8,7 @@ import { Link, useLocation as useWouterLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useLocation as useGpsLocation } from "@/hooks/use-location";
 
 const stopTypes = [
   { value: "rest_area", label: "🛣️ Rest Area", desc: "State/highway rest area" },
@@ -24,10 +25,17 @@ interface GeoSuggestion {
   address: string;
 }
 
-async function searchPlaces(q: string): Promise<GeoSuggestion[]> {
+async function searchPlaces(
+  q: string,
+  userLocation?: { lat: number; lng: number } | null
+): Promise<GeoSuggestion[]> {
   try {
+    // Build a viewbox biased around the user's location (±2° ≈ 200 km) to surface nearby results first
+    const viewboxParam = userLocation
+      ? `&viewbox=${userLocation.lng - 2},${userLocation.lat - 2},${userLocation.lng + 2},${userLocation.lat + 2}`
+      : "";
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=6&countrycodes=us&addressdetails=1`,
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=6&countrycodes=us&addressdetails=1${viewboxParam}`,
       { headers: { "Accept-Language": "en" } }
     );
     const data: any[] = await res.json();
@@ -64,12 +72,17 @@ export default function AddStop() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [createdId, setCreatedId] = useState<number | null>(null);
 
+  // Silently grab GPS so we can bias the location search
+  const { location: gpsLocation } = useGpsLocation();
+
   // Location search state
   const [locationQuery, setLocationQuery] = useState("");
   const [suggestions, setSuggestions] = useState<GeoSuggestion[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<GeoSuggestion | null>(null);
   const [searching, setSearching] = useState(false);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gpsLocationRef = useRef(gpsLocation);
+  useEffect(() => { gpsLocationRef.current = gpsLocation; }, [gpsLocation]);
 
   const createStop = useCreateStop({
     mutation: {
@@ -102,7 +115,7 @@ export default function AddStop() {
     }
     debounceTimer.current = setTimeout(async () => {
       setSearching(true);
-      const results = await searchPlaces(locationQuery);
+      const results = await searchPlaces(locationQuery, gpsLocationRef.current);
       setSuggestions(results);
       setSearching(false);
     }, 400);
