@@ -25,31 +25,42 @@ interface GeoSuggestion {
   address: string;
 }
 
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 async function searchPlaces(
   q: string,
   userLocation?: { lat: number; lng: number } | null
 ): Promise<GeoSuggestion[]> {
   try {
-    // Build a viewbox biased around the user's location (±2° ≈ 200 km) to surface nearby results first
-    const viewboxParam = userLocation
-      ? `&viewbox=${userLocation.lng - 2},${userLocation.lat - 2},${userLocation.lng + 2},${userLocation.lat + 2}`
-      : "";
+    // Fetch more results so we have a good pool to sort from
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=6&countrycodes=us&addressdetails=1${viewboxParam}`,
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=12&countrycodes=us&addressdetails=1`,
       { headers: { "Accept-Language": "en" } }
     );
     const data: any[] = await res.json();
-    return data.map((r) => {
+    const results: (GeoSuggestion & { distKm: number })[] = data.map((r) => {
+      const lat = parseFloat(r.lat);
+      const lng = parseFloat(r.lon);
       const parts = r.display_name.split(",").map((s: string) => s.trim());
       const shortLabel = parts.slice(0, 3).join(", ");
       const fullAddress = parts.slice(0, 5).join(", ");
-      return {
-        lat: parseFloat(r.lat),
-        lng: parseFloat(r.lon),
-        label: shortLabel,
-        address: fullAddress,
-      };
+      // Compute distance to user (if available) for client-side sorting
+      const distKm = userLocation
+        ? haversineKm(userLocation.lat, userLocation.lng, lat, lng)
+        : Infinity;
+      return { lat, lng, label: shortLabel, address: fullAddress, distKm };
     });
+    // Sort by distance when we have a GPS fix — closest first
+    if (userLocation) results.sort((a, b) => a.distKm - b.distKm);
+    return results.slice(0, 6).map(({ lat, lng, label, address }) => ({ lat, lng, label, address }));
   } catch {
     return [];
   }
