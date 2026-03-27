@@ -3,7 +3,7 @@ import { Layout } from "@/components/layout";
 import { MapView } from "@/components/map-view";
 import { useLocation } from "@/hooks/use-location";
 import { useGetStops } from "@workspace/api-client-react";
-import { Search, Loader2, Map as MapIcon, List, Trophy, Plus, LocateFixed, CheckCircle } from "lucide-react";
+import { Search, Loader2, Map as MapIcon, List, Trophy, Plus, LocateFixed, CheckCircle, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
 import { FlushRating } from "@/components/flush-rating";
@@ -211,14 +211,28 @@ export default function Home() {
               onFocus={() => { if (searchQuery === "Near me") setSearchQuery(""); }}
               onKeyDown={handleSearchKeyDown}
             />
-            <button
-              type="button"
-              onClick={fireSearch}
-              className="ml-2 shrink-0 w-8 h-8 bg-primary text-white rounded-xl flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all shadow-sm shadow-primary/30"
-              aria-label="Search"
-            >
-              <Search className="w-4 h-4" />
-            </button>
+            {searchQuery.trim() ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery("");
+                  setSearchCenter(null);
+                }}
+                className="ml-2 shrink-0 w-8 h-8 bg-slate-100 text-slate-500 hover:bg-slate-200 rounded-xl flex items-center justify-center active:scale-95 transition-all"
+                aria-label="Clear search"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={fireSearch}
+                className="ml-2 shrink-0 w-8 h-8 bg-primary text-white rounded-xl flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all shadow-sm shadow-primary/30"
+                aria-label="Search"
+              >
+                <Search className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
           {/* 3-tab switcher */}
