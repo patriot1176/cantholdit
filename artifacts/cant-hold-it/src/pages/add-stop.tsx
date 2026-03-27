@@ -8,7 +8,7 @@ import { Link, useLocation as useWouterLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { readGpsFromSession } from "@/hooks/use-location";
+import { readGpsFromSession, saveGpsToSession } from "@/hooks/use-location";
 
 const stopTypes = [
   { value: "rest_area", label: "🛣️ Rest Area", desc: "State/highway rest area" },
@@ -35,35 +35,62 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function parseNominatimResults(
+  data: any[],
+  userLocation?: { lat: number; lng: number } | null
+): (GeoSuggestion & { distKm: number })[] {
+  return data.map((r) => {
+    const lat = parseFloat(r.lat);
+    const lng = parseFloat(r.lon);
+    const parts = r.display_name.split(",").map((s: string) => s.trim());
+    return {
+      lat,
+      lng,
+      label: parts.slice(0, 3).join(", "),
+      address: parts.slice(0, 5).join(", "),
+      distKm: userLocation ? haversineKm(userLocation.lat, userLocation.lng, lat, lng) : Infinity,
+    };
+  });
+}
+
+async function fetchNominatim(q: string, extra: string): Promise<any[]> {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&countrycodes=us&addressdetails=1${extra}`,
+      { headers: { "Accept-Language": "en" } }
+    );
+    return await res.json();
+  } catch {
+    return [];
+  }
+}
+
 async function searchPlaces(
   q: string,
   userLocation?: { lat: number; lng: number } | null
 ): Promise<GeoSuggestion[]> {
-  try {
-    // Fetch more results so we have a good pool to sort from
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=12&countrycodes=us&addressdetails=1`,
-      { headers: { "Accept-Language": "en" } }
+  // Stage 1 — bounded: only return results within ~150 km of the user
+  // This forces Nominatim to show local results even when national chains score higher globally
+  if (userLocation) {
+    const delta = 1.35; // ≈ 150 km per axis
+    const vb = `${userLocation.lng - delta},${userLocation.lat - delta},${userLocation.lng + delta},${userLocation.lat + delta}`;
+    const local = parseNominatimResults(
+      await fetchNominatim(q, `&limit=8&viewbox=${vb}&bounded=1`),
+      userLocation
     );
-    const data: any[] = await res.json();
-    const results: (GeoSuggestion & { distKm: number })[] = data.map((r) => {
-      const lat = parseFloat(r.lat);
-      const lng = parseFloat(r.lon);
-      const parts = r.display_name.split(",").map((s: string) => s.trim());
-      const shortLabel = parts.slice(0, 3).join(", ");
-      const fullAddress = parts.slice(0, 5).join(", ");
-      // Compute distance to user (if available) for client-side sorting
-      const distKm = userLocation
-        ? haversineKm(userLocation.lat, userLocation.lng, lat, lng)
-        : Infinity;
-      return { lat, lng, label: shortLabel, address: fullAddress, distKm };
-    });
-    // Sort by distance when we have a GPS fix — closest first
-    if (userLocation) results.sort((a, b) => a.distKm - b.distKm);
-    return results.slice(0, 6).map(({ lat, lng, label, address }) => ({ lat, lng, label, address }));
-  } catch {
-    return [];
+    if (local.length > 0) {
+      return local.sort((a, b) => a.distKm - b.distKm).slice(0, 6)
+        .map(({ lat, lng, label, address }) => ({ lat, lng, label, address }));
+    }
   }
+
+  // Stage 2 — national fallback: sort by distance if we have GPS, else Nominatim order
+  const national = parseNominatimResults(
+    await fetchNominatim(q, `&limit=12`),
+    userLocation
+  );
+  if (userLocation) national.sort((a, b) => a.distKm - b.distKm);
+  return national.slice(0, 6).map(({ lat, lng, label, address }) => ({ lat, lng, label, address }));
 }
 
 const addStopSchema = z.object({
@@ -82,6 +109,21 @@ export default function AddStop() {
   const queryClient = useQueryClient();
   const [isSuccess, setIsSuccess] = useState(false);
   const [createdId, setCreatedId] = useState<number | null>(null);
+
+  // GPS — read from session immediately, then refresh in background
+  const gpsPosRef = useRef<{ lat: number; lng: number } | null>(readGpsFromSession());
+  useEffect(() => {
+    if (!("geolocation" in navigator)) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        saveGpsToSession(loc.lat, loc.lng);
+        gpsPosRef.current = loc;
+      },
+      () => {},
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+    );
+  }, []);
 
   // Location search state
   const [locationQuery, setLocationQuery] = useState("");
@@ -121,7 +163,7 @@ export default function AddStop() {
     }
     debounceTimer.current = setTimeout(async () => {
       setSearching(true);
-      const results = await searchPlaces(locationQuery, readGpsFromSession());
+      const results = await searchPlaces(locationQuery, gpsPosRef.current);
       setSuggestions(results);
       setSearching(false);
     }, 400);
