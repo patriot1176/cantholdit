@@ -17,21 +17,20 @@ function LocationUpdater({ center }: { center: [number, number] | null }) {
 }
 
 const createMarkerIcon = (rating: number | null) => {
-  let color = 'var(--color-muted-foreground)';
-  let shadow = 'rgba(0,0,0,0.1)';
-  
+  // Use hardcoded hex colors — CSS vars don't work inside Leaflet's divIcon HTML
+  let color = '#94a3b8';
+  let shadowColor = 'rgba(148,163,184,0.4)';
+
   if (rating !== null) {
     if (rating >= 4.0) {
-      color = 'var(--color-success)';
-      shadow = 'var(--color-success)';
-    }
-    else if (rating >= 2.5) {
-      color = 'var(--color-warning)';
-      shadow = 'var(--color-warning)';
-    }
-    else {
-      color = 'var(--color-destructive)';
-      shadow = 'var(--color-destructive)';
+      color = '#22c55e';        // green
+      shadowColor = 'rgba(34,197,94,0.4)';
+    } else if (rating >= 3.0) {
+      color = '#f59e0b';        // yellow/amber
+      shadowColor = 'rgba(245,158,11,0.4)';
+    } else {
+      color = '#ef4444';        // red
+      shadowColor = 'rgba(239,68,68,0.4)';
     }
   }
 
@@ -40,17 +39,16 @@ const createMarkerIcon = (rating: number | null) => {
     html: `
       <div style="
         background-color: ${color}; 
-        width: 32px; 
-        height: 32px; 
+        width: 36px; 
+        height: 36px; 
         border-radius: 50%; 
         border: 3px solid white; 
-        box-shadow: 0 4px 10px -2px ${shadow}; 
+        box-shadow: 0 4px 12px -2px ${shadowColor}; 
         display: flex; 
         align-items: center; 
         justify-content: center; 
-        font-size: 14px;
-        transform: translateY(-50%);
-        transition: all 0.2s;
+        font-size: 16px;
+        cursor: pointer;
       ">
         🚽
       </div>
@@ -68,7 +66,7 @@ export function MapView({
   stops: Stop[], 
   userLocation: { lat: number, lng: number } | null 
 }) {
-  const defaultCenter: [number, number] = [39.8283, -98.5795]; // Center of US
+  const defaultCenter: [number, number] = [40.2, -87.5]; // Midwest corridor center
   const [activeCenter, setActiveCenter] = useState<[number, number] | null>(null);
 
   useEffect(() => {
@@ -81,7 +79,7 @@ export function MapView({
     <div className="relative w-full h-full bg-slate-100 z-0">
       <MapContainer 
         center={defaultCenter} 
-        zoom={4} 
+        zoom={5} 
         zoomControl={false}
         className="w-full h-full"
       >
