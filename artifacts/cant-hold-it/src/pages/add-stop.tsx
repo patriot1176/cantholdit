@@ -176,21 +176,54 @@ function normalizeHighway(raw: string): string | null {
 }
 
 async function detectHighwayFromCoords(lat: number, lng: number): Promise<string | null> {
+  // Primary: Overpass API — finds motorway/trunk ways within 8km (much more reliable)
+  try {
+    const q = `[out:json][timeout:8];(way[highway=motorway](around:8000,${lat},${lng});way[highway=motorway_link](around:8000,${lat},${lng});way[highway=trunk](around:8000,${lat},${lng}););out tags;`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch(
+      `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(q)}`,
+      { signal: controller.signal }
+    );
+    clearTimeout(timer);
+    const data = await res.json();
+    if (data.elements?.length > 0) {
+      // Prefer elements that have a ref tag (e.g. "I 75", "I 75;I 74", "US 23")
+      for (const el of data.elements) {
+        const ref: string | undefined = el.tags?.ref;
+        if (ref) {
+          // OSM refs can be semicolon-separated (e.g. "I 75;I 74")
+          for (const part of ref.split(";")) {
+            const h = normalizeHighway(part.trim());
+            if (h) return h;
+          }
+        }
+      }
+      // Fall back to name tag
+      for (const el of data.elements) {
+        const name: string | undefined = el.tags?.name;
+        if (name) {
+          const h = normalizeHighway(name);
+          if (h) return h;
+        }
+      }
+    }
+  } catch { /* fall through */ }
+
+  // Fallback: Nominatim reverse geocode
   try {
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1&zoom=16`,
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1&zoom=14`,
       { headers: { "Accept-Language": "en" } }
     );
     const data = await res.json();
     const addr = data.address || {};
-    // Check highway-specific fields first
     for (const key of ["motorway", "trunk", "primary", "road"]) {
       if (addr[key]) {
         const h = normalizeHighway(addr[key]);
         if (h) return h;
       }
     }
-    // Also check the display name for highway patterns
     if (data.display_name) {
       const h = normalizeHighway(data.display_name);
       if (h) return h;
