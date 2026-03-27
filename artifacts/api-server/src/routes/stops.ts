@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, avg, count, sql } from "drizzle-orm";
+import { eq, desc, avg, count, sql, and, gte } from "drizzle-orm";
 import { db, stopsTable, ratingsTable, photosTable, reportsTable } from "@workspace/db";
 import {
   GetStopsQueryParams,
@@ -311,6 +311,30 @@ router.patch("/stops/:id/amenities", async (req, res): Promise<void> => {
   if (!stop) { res.status(404).json({ error: "Stop not found" }); return; }
   await db.update(stopsTable).set({ amenities: JSON.stringify(amenities) }).where(eq(stopsTable.id, id));
   res.json({ amenities });
+});
+
+// GET /stops/:id/reports — get recent community reports for a stop
+router.get("/stops/:id/reports", async (req, res): Promise<void> => {
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid stop id" }); return; }
+
+  const ninetyDaysAgo = new Date();
+  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+  const reports = await db
+    .select()
+    .from(reportsTable)
+    .where(and(eq(reportsTable.stopId, id), gte(reportsTable.createdAt, ninetyDaysAgo)))
+    .orderBy(desc(reportsTable.createdAt));
+
+  const countByType: Record<string, number> = {};
+  for (const r of reports) {
+    countByType[r.reportType] = (countByType[r.reportType] || 0) + 1;
+  }
+
+  const topType = Object.entries(countByType).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+  res.json({ total: reports.length, countByType, topType, latest: reports[0] ?? null });
 });
 
 // POST /stops/:id/report — report a problem with a stop

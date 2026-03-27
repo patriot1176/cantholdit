@@ -407,7 +407,7 @@ export default function AddStop() {
         }
         setLocatingMe(false);
       },
-      { enableHighAccuracy: false, timeout: 12000, maximumAge: 30000 }
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
   }, [form, pickPlace]);
 

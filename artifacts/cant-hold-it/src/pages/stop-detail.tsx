@@ -42,6 +42,16 @@ export default function StopDetail() {
     enabled: id > 0,
   });
 
+  interface ReportSummary { total: number; countByType: Record<string, number>; topType: string | null; }
+  const { data: reportSummary, refetch: refetchReports } = useQuery<ReportSummary>({
+    queryKey: ["reports", id],
+    queryFn: async () => {
+      const res = await fetch(`/api/stops/${id}/reports`);
+      return res.json();
+    },
+    enabled: id > 0,
+  });
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [shareMsg, setShareMsg] = useState<string | null>(null);
@@ -95,6 +105,7 @@ export default function StopDetail() {
         body: JSON.stringify({ reportType, comment: reportComment.trim() || undefined }),
       });
       setReportSuccess(true);
+      refetchReports();
       setTimeout(() => { setShowReport(false); setReportSuccess(false); setReportComment(""); }, 2000);
     } catch { /* no-op */ }
     setReportSubmitting(false);
@@ -266,6 +277,34 @@ export default function StopDetail() {
             </div>
           </div>
         </div>
+
+        {/* Report warning banner */}
+        {reportSummary && reportSummary.total > 0 && (() => {
+          const t = reportSummary.topType;
+          const n = reportSummary.total;
+          const isPermanent = t === "permanently_closed";
+          const isTemp = t === "temporarily_closed";
+          const label = isPermanent
+            ? "Reported permanently closed"
+            : isTemp
+            ? "Reported temporarily closed"
+            : t === "wrong_location"
+            ? "Location may be incorrect"
+            : t === "wrong_info"
+            ? "Info may be inaccurate"
+            : "Problem reported";
+          return (
+            <div className={`mx-4 mt-3 flex items-start gap-2.5 rounded-2xl px-4 py-3 border ${isPermanent ? "bg-red-50 border-red-200 text-red-700" : "bg-amber-50 border-amber-200 text-amber-800"}`}>
+              <span className="text-lg leading-none mt-0.5">{isPermanent ? "🚫" : "⚠️"}</span>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-sm leading-tight">{label}</p>
+                <p className="text-xs opacity-80 mt-0.5">
+                  {n === 1 ? "1 community report" : `${n} community reports`} · Awaiting moderation
+                </p>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Body content */}
         <div className="p-4 flex flex-col gap-6 pb-12">
