@@ -3,7 +3,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useCreateStop, getGetStopsQueryKey } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout";
-import { ArrowLeft, Loader2, MapPin, CheckCircle2, Search, X } from "lucide-react";
+import { ArrowLeft, Loader2, MapPin, CheckCircle2, Search, X, Navigation } from "lucide-react";
 import { Link, useLocation as useWouterLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
@@ -135,6 +135,8 @@ export default function AddStop() {
   const [suggestions, setSuggestions] = useState<GeoSuggestion[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<GeoSuggestion | null>(null);
   const [searching, setSearching] = useState(false);
+  const [locatingMe, setLocatingMe] = useState(false);
+  const [locateError, setLocateError] = useState<string | null>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const createStop = useCreateStop({
@@ -196,6 +198,58 @@ export default function AddStop() {
     form.setValue("lat", 0);
     form.setValue("lng", 0);
   };
+
+  // "I'm here right now" — get GPS then reverse-geocode the address
+  const useMyLocation = useCallback(async () => {
+    if (!("geolocation" in navigator)) {
+      setLocateError("Your browser doesn't support location access.");
+      return;
+    }
+    setLocatingMe(true);
+    setLocateError(null);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        saveGpsToSession(lat, lng);
+        gpsPosRef.current = { lat, lng };
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`,
+            { headers: { "Accept-Language": "en" } }
+          );
+          const data = await res.json();
+          const parts = (data.display_name as string).split(",").map((s: string) => s.trim());
+          const label = parts.slice(0, 3).join(", ");
+          const address = parts.slice(0, 5).join(", ");
+          const place: GeoSuggestion = { lat, lng, label, address, distKm: 0 };
+          pickPlace(place);
+          // Don't auto-fill name from reverse geocode — user should enter the business name
+          form.setValue("name", "", { shouldValidate: false });
+        } catch {
+          // Coordinates are still valid even if reverse geocode fails
+          const place: GeoSuggestion = {
+            lat, lng,
+            label: `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+            address: "Current location",
+            distKm: 0,
+          };
+          pickPlace(place);
+          form.setValue("name", "", { shouldValidate: false });
+        }
+        setLocatingMe(false);
+      },
+      (err) => {
+        setLocateError(
+          err.code === 1
+            ? "Location access denied. Please allow location in your browser settings."
+            : "Couldn't get your location. Try searching by name instead."
+        );
+        setLocatingMe(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  }, [form, pickPlace]);
 
   const onSubmit = (data: AddStopValues) => {
     createStop.mutate({
