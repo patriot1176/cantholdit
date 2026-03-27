@@ -71,6 +71,7 @@ export default function Home() {
       (pos) => {
         setLocating(false);
         const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        skipGeocodeRef.current = true; // prevent debounce from geocoding "Near me" text
         setSearchCenter(coords);
         setSearchQuery("Near me");
         setSuggestions([]);
@@ -104,12 +105,15 @@ export default function Home() {
 
   // Debounce timer ref — cancelled on Enter/button tap so it fires immediately
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Set to true when GPS locateMe sets the query — prevents Nominatim overriding GPS coords
+  const skipGeocodeRef = useRef(false);
 
   // Clear suggestions when query changes
   useEffect(() => {
     setSuggestions([]);
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     if (!searchQuery.trim()) { setSearchCenter(null); return; }
+    if (skipGeocodeRef.current) { skipGeocodeRef.current = false; return; }
     debounceTimer.current = setTimeout(() => runGeocode(searchQuery), 700);
     return () => { if (debounceTimer.current) clearTimeout(debounceTimer.current); };
   }, [searchQuery, runGeocode]);
