@@ -1,7 +1,9 @@
 import { useEffect, useRef } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
-import { Link } from "wouter";
+import "leaflet.markercluster";
+import "leaflet.markercluster/dist/MarkerCluster.css";
+import { useLocation as useWouterLocation } from "wouter";
 import type { Stop } from "@workspace/api-client-react";
 
 // Continental US bounds
@@ -55,6 +57,64 @@ const createMarkerIcon = (rating: number | null) => {
   });
 };
 
+// Cluster layer using leaflet.markercluster directly (react-leaflet isn't needed)
+function ClusterLayer({ stops, onNavigate }: { stops: Stop[]; onNavigate: (id: number) => void }) {
+  const map = useMap();
+  const navigateRef = useRef(onNavigate);
+  useEffect(() => { navigateRef.current = onNavigate; }, [onNavigate]);
+
+  useEffect(() => {
+    const group = (L as any).markerClusterGroup({
+      showCoverageOnHover: false,
+      maxClusterRadius: 60,
+      spiderfyOnMaxZoom: true,
+      iconCreateFunction: (cluster: any) => {
+        const count = cluster.getChildCount();
+        return L.divIcon({
+          html: `<div style="background:#3b82f6;color:white;width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;border:3px solid white;box-shadow:0 2px 12px rgba(59,130,246,0.45)">${count}</div>`,
+          iconSize: [40, 40] as [number, number],
+          iconAnchor: [20, 20] as [number, number],
+          className: "",
+        });
+      },
+    });
+
+    stops.forEach((stop) => {
+      const marker = L.marker([stop.lat, stop.lng], {
+        icon: createMarkerIcon(stop.overallRating),
+      });
+
+      const el = L.DomUtil.create("div");
+      el.style.cssText = "padding:4px;min-width:190px;font-family:system-ui,sans-serif";
+      el.innerHTML = `
+        <div style="font-weight:700;font-size:15px;line-height:1.2;margin-bottom:2px">${stop.name}</div>
+        <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">${stop.type.replace("_", " ")}</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
+          <span style="font-size:18px">🚽</span>
+          <span style="font-weight:700;font-size:16px">${stop.overallRating ? stop.overallRating.toFixed(1) : "—"}</span>
+          <span style="font-size:12px;color:#64748b">(${stop.totalRatings} ratings)</span>
+        </div>
+        <button style="background:#3b82f6;color:white;border:none;padding:10px;border-radius:10px;font-weight:700;width:100%;cursor:pointer;font-size:13px">View Details →</button>
+      `;
+      el.querySelector("button")?.addEventListener("click", () => {
+        navigateRef.current(stop.id);
+        map.closePopup();
+      });
+
+      marker.bindPopup(el, { maxWidth: 240 });
+      group.addLayer(marker);
+    });
+
+    map.addLayer(group);
+    return () => {
+      group.clearLayers();
+      map.removeLayer(group);
+    };
+  }, [map, stops]);
+
+  return null;
+}
+
 const mapBtnClass =
   "bg-white w-12 h-12 rounded-full shadow-lg shadow-black/10 border border-border flex items-center justify-center hover:bg-slate-50 active:scale-95 transition-all";
 
@@ -68,6 +128,7 @@ export function MapView({
   searchCenter: { lat: number; lng: number } | null;
 }) {
   const mapRef = useRef<L.Map | null>(null);
+  const [, navigate] = useWouterLocation();
 
   // Fly to geocoded search result when it changes
   useEffect(() => {
@@ -119,43 +180,11 @@ export function MapView({
           />
         )}
 
-        {/* Stop markers */}
-        {stops.map((stop) => (
-          <Marker
-            key={stop.id}
-            position={[stop.lat, stop.lng]}
-            icon={createMarkerIcon(stop.overallRating)}
-          >
-            <Popup className="custom-popup">
-              <div className="p-3 min-w-[200px]">
-                <h3 className="font-display font-bold text-lg leading-tight mb-1">
-                  {stop.name}
-                </h3>
-                <p className="text-xs text-muted-foreground mb-3">
-                  {stop.type.replace("_", " ").toUpperCase()}
-                </p>
-
-                <div className="flex items-center gap-1 bg-slate-50 p-2 rounded-lg mb-3">
-                  <span className="text-xl">🚽</span>
-                  <span className="font-bold text-foreground ml-1">
-                    {stop.overallRating
-                      ? stop.overallRating.toFixed(1)
-                      : "N/A"}
-                  </span>
-                  <span className="text-xs text-muted-foreground ml-1">
-                    ({stop.totalRatings} ratings)
-                  </span>
-                </div>
-
-                <Link href={`/stop/${stop.id}`}>
-                  <button className="w-full py-2 bg-primary text-white rounded-xl font-bold shadow-md shadow-primary/20 hover:shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2">
-                    View Details
-                  </button>
-                </Link>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+        {/* Clustered stop markers */}
+        <ClusterLayer
+          stops={stops}
+          onNavigate={(id) => navigate(`/stop/${id}`)}
+        />
       </MapContainer>
 
       {/* Zoom controls */}

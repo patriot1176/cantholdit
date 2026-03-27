@@ -3,7 +3,7 @@ import { Layout } from "@/components/layout";
 import { MapView } from "@/components/map-view";
 import { useLocation } from "@/hooks/use-location";
 import { useGetStops } from "@workspace/api-client-react";
-import { Search, Loader2, Map as MapIcon, List, Trophy, Plus, LocateFixed } from "lucide-react";
+import { Search, Loader2, Map as MapIcon, List, Trophy, Plus, LocateFixed, CheckCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
 import { FlushRating } from "@/components/flush-rating";
@@ -59,6 +59,8 @@ export default function Home() {
   const [viewMode, setViewMode] = useState<ViewMode>("map");
   const [locating, setLocating] = useState(false);
   const [locateError, setLocateError] = useState<string | null>(null);
+  const [filterType, setFilterType] = useState("all");
+  const [filterMinRating, setFilterMinRating] = useState(0);
 
   const locateMe = useCallback(() => {
     if (!("geolocation" in navigator)) {
@@ -146,6 +148,13 @@ export default function Home() {
         haversineKm(center.lat, center.lng, b.lat, b.lng)
       );
   })();
+
+  // Apply type + rating filters on top of proximity-filtered stops
+  const filteredStops = stops?.filter((s) => {
+    if (filterType !== "all" && s.type !== filterType) return false;
+    if (filterMinRating > 0 && (s.overallRating === null || s.overallRating < filterMinRating)) return false;
+    return true;
+  });
 
   // True when user searched a location but no stops exist nearby
   const noStopsNearby = !!searchCenter && !!stops && stops.length === 0;
@@ -248,6 +257,49 @@ export default function Home() {
           )}
         </AnimatePresence>
 
+        {/* Filter chips — shown in list + map views */}
+        {viewMode !== "top" && (
+          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
+            {[
+              { value: "all", label: "All Types" },
+              { value: "rest_area", label: "🛣️ Rest Area" },
+              { value: "gas_station", label: "⛽ Gas" },
+              { value: "truck_stop", label: "🚛 Truck" },
+              { value: "fast_food", label: "🍔 Food" },
+            ].map((chip) => (
+              <button
+                key={chip.value}
+                onClick={() => setFilterType(chip.value)}
+                className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                  filterType === chip.value
+                    ? "bg-primary text-white shadow-sm"
+                    : "bg-white/90 backdrop-blur-sm text-slate-600 border border-white/50 shadow-sm"
+                }`}
+              >
+                {chip.label}
+              </button>
+            ))}
+            <div className="w-px bg-white/40 shrink-0 self-stretch my-0.5" />
+            {[
+              { value: 0, label: "Any ★" },
+              { value: 3, label: "3★+" },
+              { value: 4, label: "4★+" },
+            ].map((chip) => (
+              <button
+                key={chip.value}
+                onClick={() => setFilterMinRating(chip.value)}
+                className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                  filterMinRating === chip.value
+                    ? "bg-primary text-white shadow-sm"
+                    : "bg-white/90 backdrop-blur-sm text-slate-600 border border-white/50 shadow-sm"
+                }`}
+              >
+                {chip.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Disambiguation dropdown — shown when multiple results match */}
         {suggestions.length > 1 && (
           <motion.div
@@ -311,7 +363,7 @@ export default function Home() {
               className="absolute inset-0"
             >
               <MapView
-                stops={stops || []}
+                stops={filteredStops || []}
                 userLocation={location}
                 searchCenter={searchCenter}
               />
@@ -354,7 +406,7 @@ export default function Home() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="absolute inset-0 bg-background overflow-y-auto pt-24 pb-28 px-4 flex flex-col gap-4"
+              className="absolute inset-0 bg-background overflow-y-auto pt-36 pb-28 px-4 flex flex-col gap-4"
             >
               <div className="flex items-center justify-center pt-1">
                 <span className="text-[11px] font-bold text-muted-foreground/60 tracking-wide">
@@ -362,17 +414,17 @@ export default function Home() {
                 </span>
               </div>
 
-              {stops?.length === 0 ? (
+              {filteredStops?.length === 0 ? (
                 <div className="text-center py-16 flex flex-col items-center gap-4">
                   <div className="text-6xl grayscale opacity-50">🌵</div>
                   <div>
                     <h3 className="font-display text-xl font-bold text-foreground">
-                      {noStopsNearby ? "No stops here yet" : "No stops found"}
+                      {noStopsNearby ? "No stops here yet" : "No stops match your filters"}
                     </h3>
                     <p className="text-muted-foreground mt-1 text-sm">
                       {noStopsNearby
                         ? "Be the first to add one in this area!"
-                        : "Your bladder will have to wait."}
+                        : "Try relaxing your type or rating filter."}
                     </p>
                   </div>
                   {noStopsNearby && (
@@ -387,43 +439,51 @@ export default function Home() {
                   )}
                 </div>
               ) : (
-                stops?.map((stop) => (
-                  <Link key={stop.id} href={`/stop/${stop.id}`}>
-                    <div className="bg-card rounded-2xl p-4 shadow-sm border border-border/50 hover:shadow-md hover:border-primary/30 transition-all active:scale-[0.98]">
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="flex-1 min-w-0 pr-3">
-                          <h3 className="font-display font-bold text-lg text-foreground leading-tight">
-                            {stop.name}
-                          </h3>
-                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mt-1">
-                            {stop.type.replace("_", " ")}
-                          </p>
+                filteredStops?.map((stop) => {
+                  const isVerified = stop.totalRatings >= 10;
+                  return (
+                    <Link key={stop.id} href={`/stop/${stop.id}`}>
+                      <div className="bg-card rounded-2xl p-4 shadow-sm border border-border/50 hover:shadow-md hover:border-primary/30 transition-all active:scale-[0.98]">
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex-1 min-w-0 pr-3">
+                            <div className="flex items-center gap-1.5">
+                              <h3 className="font-display font-bold text-lg text-foreground leading-tight">
+                                {stop.name}
+                              </h3>
+                              {isVerified && (
+                                <CheckCircle className="w-4 h-4 text-primary shrink-0" title="Community Verified" />
+                              )}
+                            </div>
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mt-1">
+                              {stop.type.replace("_", " ")}
+                            </p>
+                          </div>
+                          <div className="bg-slate-50 px-2 py-1 rounded-lg border border-slate-100 flex flex-col items-center shrink-0">
+                            <span className="text-sm font-bold text-foreground">
+                              {stop.overallRating?.toFixed(1) || "—"}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {stop.totalRatings} rev
+                            </span>
+                          </div>
                         </div>
-                        <div className="bg-slate-50 px-2 py-1 rounded-lg border border-slate-100 flex flex-col items-center shrink-0">
-                          <span className="text-sm font-bold text-foreground">
-                            {stop.overallRating?.toFixed(1) || "—"}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">
-                            {stop.totalRatings} rev
-                          </span>
+                        <p className="text-sm text-foreground/70 truncate mb-3">
+                          {stop.address}
+                        </p>
+                        <div className="flex gap-2 flex-wrap">
+                          {stop.badges.map((badge) => (
+                            <span
+                              key={badge}
+                              className="px-2 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded-md uppercase tracking-wider"
+                            >
+                              {badge.replace("_", " ")}
+                            </span>
+                          ))}
                         </div>
                       </div>
-                      <p className="text-sm text-foreground/70 truncate mb-3">
-                        {stop.address}
-                      </p>
-                      <div className="flex gap-2 flex-wrap">
-                        {stop.badges.map((badge) => (
-                          <span
-                            key={badge}
-                            className="px-2 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded-md uppercase tracking-wider"
-                          >
-                            {badge.replace("_", " ")}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </Link>
-                ))
+                    </Link>
+                  );
+                })
               )}
             </motion.div>
           )}

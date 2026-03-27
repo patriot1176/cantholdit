@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, avg, count, sql } from "drizzle-orm";
-import { db, stopsTable, ratingsTable } from "@workspace/db";
+import { db, stopsTable, ratingsTable, photosTable } from "@workspace/db";
 import {
   GetStopsQueryParams,
   GetStopsResponse,
@@ -262,6 +262,27 @@ router.post("/stops/:id/ratings", async (req, res): Promise<void> => {
         rating.familyFriendly) /
       6.0,
   });
+});
+
+router.get("/stops/:id/photos", async (req, res): Promise<void> => {
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid stop id" }); return; }
+  const photos = await db
+    .select()
+    .from(photosTable)
+    .where(eq(photosTable.stopId, id))
+    .orderBy(desc(photosTable.createdAt));
+  res.json(photos.map((p) => ({ ...p, url: `/api/storage${p.objectPath}` })));
+});
+
+router.post("/stops/:id/photos", async (req, res): Promise<void> => {
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  const { objectPath } = req.body as { objectPath?: string };
+  if (isNaN(id) || !objectPath) { res.status(400).json({ error: "Invalid request" }); return; }
+  const [stop] = await db.select({ id: stopsTable.id }).from(stopsTable).where(eq(stopsTable.id, id));
+  if (!stop) { res.status(404).json({ error: "Stop not found" }); return; }
+  const [photo] = await db.insert(photosTable).values({ stopId: id, objectPath }).returning();
+  res.status(201).json({ ...photo, url: `/api/storage${photo.objectPath}` });
 });
 
 export default router;
