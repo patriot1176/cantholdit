@@ -9,6 +9,7 @@ import Home from "@/pages/home";
 import StopDetail from "@/pages/stop-detail";
 import RateStop from "@/pages/rate-stop";
 import AddStop from "@/pages/add-stop";
+import About from "@/pages/about";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,6 +27,7 @@ function Router() {
       <Route path="/stop/:id" component={StopDetail} />
       <Route path="/stop/:id/rate" component={RateStop} />
       <Route path="/add-stop" component={AddStop} />
+      <Route path="/about" component={About} />
       <Route component={NotFound} />
     </Switch>
   );
