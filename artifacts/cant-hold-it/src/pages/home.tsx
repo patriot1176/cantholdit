@@ -3,7 +3,7 @@ import { Layout } from "@/components/layout";
 import { MapView } from "@/components/map-view";
 import { useLocation } from "@/hooks/use-location";
 import { useGetStops } from "@workspace/api-client-react";
-import { Search, Loader2, Map as MapIcon, List, Trophy, Plus, LocateFixed, CheckCircle, X } from "lucide-react";
+import { Search, Loader2, Map as MapIcon, List, Trophy, Plus, LocateFixed, CheckCircle, X, MapPin } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
 import { FlushRating } from "@/components/flush-rating";
@@ -272,6 +272,19 @@ export default function Home() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Active search banner — tap to clear */}
+        {searchCenter && searchQuery && searchQuery !== "Near me" && (
+          <button
+            type="button"
+            onClick={() => { setSearchQuery(""); setSearchCenter(null); }}
+            className="flex items-center gap-2 bg-primary/10 border border-primary/20 text-primary rounded-2xl px-3 py-2 text-xs font-semibold w-full"
+          >
+            <MapPin className="w-3.5 h-3.5 shrink-0" />
+            <span className="flex-1 text-left truncate">Showing near "{searchQuery}"</span>
+            <X className="w-3.5 h-3.5 shrink-0" />
+          </button>
+        )}
 
         {/* Filter chips — shown in list + map views */}
         {viewMode !== "top" && (
