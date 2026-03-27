@@ -1,15 +1,18 @@
 import { ReactNode } from "react";
 import { Link } from "wouter";
-import { GottaGoLogo } from "@/components/gotta-go-logo";
 
 export function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-[100dvh] flex flex-col bg-background relative max-w-md mx-auto sm:border-x sm:border-border/50 shadow-2xl shadow-black/5">
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-border/50 px-4 py-3 flex items-center">
+      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-border/50 px-4 py-2.5 flex items-center">
         <Link href="/" className="flex items-center gap-2.5 group outline-none">
-          <div className="bg-gradient-to-br from-primary to-blue-400 p-2 rounded-xl shadow-md shadow-primary/20 group-hover:scale-105 group-active:scale-95 transition-all shrink-0">
-            <GottaGoLogo className="w-5 h-5 text-white" />
-          </div>
+          <img
+            src={`${import.meta.env.BASE_URL}logo.png`}
+            width={44}
+            height={44}
+            alt="Can't Hold It logo"
+            className="rounded-xl shadow-md group-hover:scale-105 group-active:scale-95 transition-transform shrink-0"
+          />
           <div className="flex flex-col justify-center">
             <h1 className="text-[1.15rem] font-display font-bold text-foreground leading-none tracking-tight whitespace-nowrap">
               Can't Hold It
