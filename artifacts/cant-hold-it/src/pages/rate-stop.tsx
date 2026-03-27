@@ -77,6 +77,14 @@ export default function RateStop() {
     { key: "familyFriendly" as const, label: "Family Friendly", desc: "Changing tables? Roomy?" },
   ];
 
+  const flushLabels: Record<number, string> = {
+    1: "🚨 Abandon hope",
+    2: "😬 Only if desperate",
+    3: "😐 Gets the job done",
+    4: "😊 Pretty solid stop",
+    5: "👑 Royal Flush worthy!",
+  };
+
   if (isSuccess) {
     return (
       <Layout>
@@ -124,21 +132,30 @@ export default function RateStop() {
               <div>
                 <h3 className="font-display font-bold text-lg text-foreground">{cat.label}</h3>
                 <p className="text-xs text-muted-foreground">{cat.desc}</p>
+                <p className="text-[10px] text-muted-foreground/50 font-medium mt-0.5">1 = worst · 5 = best</p>
               </div>
-              <div className="flex justify-center bg-slate-50 py-4 rounded-2xl">
-                <Controller
-                  name={cat.key}
-                  control={form.control}
-                  render={({ field }) => (
-                    <FlushRating 
-                      rating={field.value || null} 
-                      interactive 
+              <Controller
+                name={cat.key}
+                control={form.control}
+                render={({ field }) => (
+                  <div className="flex flex-col items-center gap-2 bg-slate-50 py-4 rounded-2xl">
+                    <FlushRating
+                      rating={field.value || null}
+                      interactive
                       size="lg"
                       onChange={field.onChange}
                     />
-                  )}
-                />
-              </div>
+                    <div className={`text-sm font-bold min-h-[1.25rem] transition-all duration-150 ${
+                      field.value >= 4 ? "text-blue-500" :
+                      field.value >= 3 ? "text-foreground/70" :
+                      field.value >= 1 ? "text-red-500" :
+                      "text-transparent"
+                    }`}>
+                      {field.value ? flushLabels[field.value] : "tap to rate"}
+                    </div>
+                  </div>
+                )}
+              />
             </motion.div>
           ))}
         </div>

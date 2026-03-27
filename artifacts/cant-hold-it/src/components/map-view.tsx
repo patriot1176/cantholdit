@@ -12,7 +12,7 @@ const US_BOUNDS = L.latLngBounds(
 );
 
 const US_CENTER: [number, number] = [39.5, -98.35];
-const US_ZOOM = 5;
+const US_ZOOM = 4;
 
 const createMarkerIcon = (rating: number | null) => {
   let color = "#94a3b8";
