@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Layout } from "@/components/layout";
 import { MapView } from "@/components/map-view";
 import { useLocation } from "@/hooks/use-location";
+
 import { useGetStops } from "@workspace/api-client-react";
 import { Search, Loader2, Map as MapIcon, List, Trophy, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -11,7 +12,7 @@ import { FlushRating } from "@/components/flush-rating";
 type ViewMode = "map" | "list" | "top";
 
 export default function Home() {
-  const { location } = useLocation();
+  const { location, permission, requestLocation } = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("map");
 
@@ -117,7 +118,12 @@ export default function Home() {
               exit={{ opacity: 0 }}
               className="absolute inset-0"
             >
-              <MapView stops={stops || []} userLocation={location} />
+              <MapView
+                stops={stops || []}
+                userLocation={location}
+                locationPermission={permission}
+                onRequestLocation={requestLocation}
+              />
             </motion.div>
           )}
 

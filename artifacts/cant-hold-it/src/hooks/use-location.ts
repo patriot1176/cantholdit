@@ -1,32 +1,61 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+
+export type LocationPermission = "idle" | "loading" | "granted" | "denied" | "unavailable";
+
+// iOS-safe options — enableHighAccuracy:false uses WiFi/cell tower (faster, more reliable on iOS)
+const GEO_OPTIONS: PositionOptions = {
+  enableHighAccuracy: false,
+  timeout: 10000,
+  maximumAge: 300000,
+};
 
 export function useLocation() {
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [permission, setPermission] = useState<LocationPermission>("idle");
 
-  useEffect(() => {
+  const requestLocation = useCallback(() => {
     if (!("geolocation" in navigator)) {
-      setError("Geolocation is not supported by your browser");
-      setLoading(false);
+      setPermission("unavailable");
       return;
     }
-
+    setPermission("loading");
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setLocation({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        });
-        setLoading(false);
+      (pos) => {
+        setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setPermission("granted");
       },
-      (err) => {
-        setError(err.message);
-        setLoading(false);
+      () => {
+        setPermission("denied");
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+      GEO_OPTIONS
     );
   }, []);
 
-  return { location, error, loading };
+  // On mount: check if permission was previously granted → auto-fetch silently.
+  // If "prompt" (never asked) → leave as "idle" so the banner can request via user gesture.
+  // iOS Safari silently blocks getCurrentPosition() in useEffect without prior grant.
+  useEffect(() => {
+    if (!("geolocation" in navigator)) {
+      setPermission("unavailable");
+      return;
+    }
+    if ("permissions" in navigator) {
+      navigator.permissions
+        .query({ name: "geolocation" as PermissionName })
+        .then((result) => {
+          if (result.state === "granted") {
+            requestLocation(); // Already allowed — safe to call without user gesture
+          } else if (result.state === "denied") {
+            setPermission("denied");
+          }
+          // "prompt" → stay "idle", banner will prompt with a user gesture
+        })
+        .catch(() => {
+          // Older Safari without permissions API — stay "idle", banner handles it
+        });
+    }
+    // No permissions API → stay "idle"
+  }, [requestLocation]);
+
+  return { location, permission, requestLocation };
 }
