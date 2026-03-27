@@ -1,15 +1,18 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Can't Hold It - Restroom Finder API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: stops
+    description: Restroom stop operations
+  - name: ratings
+    description: Rating operations
 paths:
   /healthz:
     get:
@@ -24,6 +27,127 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /stops:
+    get:
+      operationId: getStops
+      tags: [stops]
+      summary: Get all stops
+      description: Returns all restroom stops with their aggregated ratings
+      parameters:
+        - name: lat
+          in: query
+          schema:
+            type: ["number", "null"]
+          description: Latitude for proximity search
+        - name: lng
+          in: query
+          schema:
+            type: ["number", "null"]
+          description: Longitude for proximity search
+        - name: query
+          in: query
+          schema:
+            type: ["string", "null"]
+          description: Search query for stop name or address
+      responses:
+        "200":
+          description: List of stops
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Stop"
+    post:
+      operationId: createStop
+      tags: [stops]
+      summary: Create a new stop
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateStop"
+      responses:
+        "201":
+          description: Created stop
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stop"
+  /stops/{id}:
+    get:
+      operationId: getStop
+      tags: [stops]
+      summary: Get a stop by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Stop details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StopDetail"
+        "404":
+          description: Stop not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /stops/{id}/ratings:
+    get:
+      operationId: getStopRatings
+      tags: [ratings]
+      summary: Get ratings for a stop
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of ratings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Rating"
+    post:
+      operationId: createRating
+      tags: [ratings]
+      summary: Submit a rating for a stop
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRating"
+      responses:
+        "201":
+          description: Created rating
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Rating"
+        "404":
+          description: Stop not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +157,219 @@ components:
           type: string
       required:
         - status
-
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+    StopType:
+      type: string
+      enum:
+        - rest_area
+        - gas_station
+        - fast_food
+        - truck_stop
+        - other
+    Badge:
+      type: string
+      enum:
+        - royal_flush
+        - biohazard
+        - most_reviewed
+    Stop:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        address:
+          type: string
+        type:
+          $ref: "#/components/schemas/StopType"
+        lat:
+          type: number
+        lng:
+          type: number
+        overallRating:
+          type: ["number", "null"]
+        totalRatings:
+          type: integer
+        badges:
+          type: array
+          items:
+            $ref: "#/components/schemas/Badge"
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - address
+        - type
+        - lat
+        - lng
+        - overallRating
+        - totalRatings
+        - badges
+        - createdAt
+    StopDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        address:
+          type: string
+        type:
+          $ref: "#/components/schemas/StopType"
+        lat:
+          type: number
+        lng:
+          type: number
+        overallRating:
+          type: ["number", "null"]
+        totalRatings:
+          type: integer
+        badges:
+          type: array
+          items:
+            $ref: "#/components/schemas/Badge"
+        cleanliness:
+          type: ["number", "null"]
+        smell:
+          type: ["number", "null"]
+        paperSupply:
+          type: ["number", "null"]
+        lighting:
+          type: ["number", "null"]
+        safety:
+          type: ["number", "null"]
+        familyFriendly:
+          type: ["number", "null"]
+        hours:
+          type: ["string", "null"]
+        recentRatings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Rating"
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - address
+        - type
+        - lat
+        - lng
+        - overallRating
+        - totalRatings
+        - badges
+        - cleanliness
+        - smell
+        - paperSupply
+        - lighting
+        - safety
+        - familyFriendly
+        - hours
+        - recentRatings
+        - createdAt
+    Rating:
+      type: object
+      properties:
+        id:
+          type: integer
+        stopId:
+          type: integer
+        cleanliness:
+          type: integer
+        smell:
+          type: integer
+        paperSupply:
+          type: integer
+        lighting:
+          type: integer
+        safety:
+          type: integer
+        familyFriendly:
+          type: integer
+        overallScore:
+          type: number
+        comment:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - stopId
+        - cleanliness
+        - smell
+        - paperSupply
+        - lighting
+        - safety
+        - familyFriendly
+        - overallScore
+        - comment
+        - createdAt
+    CreateStop:
+      type: object
+      properties:
+        name:
+          type: string
+        address:
+          type: string
+        type:
+          $ref: "#/components/schemas/StopType"
+        lat:
+          type: number
+        lng:
+          type: number
+        hours:
+          type: ["string", "null"]
+      required:
+        - name
+        - address
+        - type
+        - lat
+        - lng
+    CreateRating:
+      type: object
+      properties:
+        cleanliness:
+          type: integer
+          minimum: 1
+          maximum: 5
+        smell:
+          type: integer
+          minimum: 1
+          maximum: 5
+        paperSupply:
+          type: integer
+          minimum: 1
+          maximum: 5
+        lighting:
+          type: integer
+          minimum: 1
+          maximum: 5
+        safety:
+          type: integer
+          minimum: 1
+          maximum: 5
+        familyFriendly:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: ["string", "null"]
+      required:
+        - cleanliness
+        - smell
+        - paperSupply
+        - lighting
+        - safety
+        - familyFriendly

@@ -1,0 +1,18 @@
+packages:
+  "leaflet": "Core map library"
+  "react-leaflet": "React components for Leaflet maps"
+  "@types/leaflet": "TypeScript definitions for Leaflet"
+  "framer-motion": "Smooth page transitions and micro-interactions"
+  "date-fns": "Human-readable date formatting for reviews"
+  "react-hook-form": "Form state management for ratings"
+  "@hookform/resolvers": "Zod validation resolver for forms"
+
+images:
+  - path: "artifacts/cant-hold-it/public/images/logo.png"
+    description: "A fun, friendly, and clean logo for a restroom finder app called 'Can't Hold It'. Features a cute, stylized location pin merged with a sparkling clean toilet motif. Light blue and white color palette, flat vector style, modern app icon."
+    aspect_ratio: "1:1"
+
+notes:
+  - Using generated Orval hooks from @workspace/api-client-react
+  - Map defaults to US center, requests geolocation on load
+  - Uses Tailwind v4 and framer-motion for UI polish

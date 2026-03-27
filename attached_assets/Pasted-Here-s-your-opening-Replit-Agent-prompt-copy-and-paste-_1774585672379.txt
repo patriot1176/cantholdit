@@ -1,0 +1,43 @@
+Here's your opening Replit Agent prompt — copy and paste this exactly:
+
+---
+
+**REPLIT AGENT PROMPT — CAN'T HOLD IT MVP v1**
+
+Build a mobile-friendly web app called **"Can't Hold It"** with the tagline *"Because nature doesn't wait."*
+
+This is a community-rated restroom and rest stop finder for road trippers. Think Yelp but specifically for bathrooms and rest areas.
+
+**Core features for this first version:**
+
+1. **Map Screen** — Home screen showing user's current location with color-coded pins for nearby rated stops. Green = clean (4-5 flushes), Yellow = average (3 flushes), Red = avoid (1-2 flushes). Use Leaflet.js for the map.
+
+2. **Stop Detail Screen** — When you tap a pin show: stop name, address, type (Rest Area / Gas Station / Fast Food / Truck Stop), overall flush rating displayed as 🚽 emojis, breakdown scores for 6 categories, recent photos, recent reviews, and hours.
+
+3. **Rate It Screen** — Simple fast rating form with: Stop name and type selector, 1-5 flush rating 🚽 for each of these 6 categories: Cleanliness, Smell, Paper Supply, Lighting, Safety, Family Friendly. Optional one line comment. Optional photo upload. Big friendly Submit button.
+
+4. **Search Bar** — At top of map screen, search for stops along a route by entering a destination.
+
+5. **Badge System** — Automatically assign badges based on ratings: 👑 Royal Flush (4.5+ flushes average), ☣️ Biohazard (1.5 flushes or below), 🏆 Most Reviewed (top reviewed in area)
+
+**Design requirements:**
+- Mobile first, works great on phone
+- Fun and friendly tone throughout
+- Flush emojis 🚽 as the rating system instead of stars
+- Color scheme — clean whites, light blues, with humor baked into the UI copy
+- Buttons big enough to tap easily in a parking lot
+
+**Tech stack:**
+- HTML, CSS, JavaScript
+- Leaflet.js for maps
+- Local storage for ratings data to start
+- No login required for MVP
+
+**Sample seed data:**
+Pre-load 5-6 fake rated locations spread across a US highway corridor so the map isn't empty on first load. Mix of Royal Flush and Biohazard ratings.
+
+Start with the map screen and stop detail screen first. Show me when those are done before moving to the rating form.
+
+---
+
+Paste that in and let it run. Screenshot the first result and bring it back here — we'll review and build the next prompt from there. 🚽👑
