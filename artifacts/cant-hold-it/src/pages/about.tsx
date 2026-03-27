@@ -245,6 +245,82 @@ export default function About() {
           </div>
         </section>
 
+        {/* iPhone / Safari setup */}
+        <section className="mx-4 mb-6">
+          <motion.div
+            initial="hidden"
+            whileInView="show"
+            viewport={{ once: true }}
+            custom={0}
+            variants={fadeUp}
+            className="rounded-3xl border border-slate-200 bg-white overflow-hidden shadow-sm"
+          >
+            {/* Header */}
+            <div className="bg-gradient-to-r from-slate-800 to-slate-700 px-5 py-4 flex items-center gap-3">
+              <span className="text-3xl leading-none">📱</span>
+              <div>
+                <h3 className="font-display text-lg font-black text-white leading-tight">iPhone users</h3>
+                <p className="text-slate-300 text-xs mt-0.5">Allow location so the app can find stops near you</p>
+              </div>
+            </div>
+
+            <div className="px-5 py-5 flex flex-col gap-5">
+
+              {/* Why location is needed */}
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Can't Hold It uses your location to find nearby stops and to accurately pin new ones you add. Safari on iPhone blocks this by default — here's how to allow it.
+              </p>
+
+              {/* Step-by-step */}
+              <div className="flex flex-col gap-3">
+                <p className="text-xs font-bold text-foreground uppercase tracking-wide">If location is blocked or not working:</p>
+
+                {[
+                  { step: "1", text: "Open the iPhone Settings app" },
+                  { step: "2", text: "Tap Privacy & Security" },
+                  { step: "3", text: "Tap Location Services — make sure it's toggled ON" },
+                  { step: "4", text: 'Scroll down and tap Safari Websites (or Safari)' },
+                  { step: "5", text: 'Set to "While Using the App"' },
+                  { step: "6", text: "Go back to cantholdit.app and tap the location button again" },
+                ].map(({ step, text }) => (
+                  <div key={step} className="flex items-start gap-3">
+                    <div className="shrink-0 w-7 h-7 rounded-full bg-slate-800 text-white flex items-center justify-center text-xs font-black">
+                      {step}
+                    </div>
+                    <p className="text-sm text-foreground leading-snug pt-0.5">{text}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Divider */}
+              <div className="border-t border-border/50" />
+
+              {/* Private mode warning */}
+              <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
+                <span className="text-xl leading-none mt-0.5">⚠️</span>
+                <div>
+                  <p className="font-bold text-sm text-amber-800 leading-tight">Private Browsing always blocks location</p>
+                  <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+                    If you're using Safari's Private tab (the dark/gray address bar), location is permanently off — no settings change will fix it. Switch to a regular tab to use location features.
+                  </p>
+                </div>
+              </div>
+
+              {/* First-time prompt tip */}
+              <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3">
+                <span className="text-xl leading-none mt-0.5">💡</span>
+                <div>
+                  <p className="font-bold text-sm text-blue-800 leading-tight">First time visiting?</p>
+                  <p className="text-xs text-blue-700 mt-1 leading-relaxed">
+                    Safari will ask "Allow cantholdit.app to use your location?" — tap <strong>Allow</strong>. If you tapped Don't Allow by mistake, follow the steps above to fix it in Settings.
+                  </p>
+                </div>
+              </div>
+
+            </div>
+          </motion.div>
+        </section>
+
         {/* Route planning highlight */}
         <section className="mx-4 mb-6 rounded-3xl bg-gradient-to-br from-blue-500 to-primary p-6 text-white">
           <motion.div
