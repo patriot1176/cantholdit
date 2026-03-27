@@ -73,10 +73,18 @@ router.post("/admin/seed-rest-areas", async (req, res): Promise<void> => {
     const allNodes: OsmNode[] = [];
     const regionResults: Record<string, number> = {};
 
-    for (const [s, w, n, e] of US_REGIONS) {
-      const label = `${s},${w},${n},${e}`;
-      try {
+    // Run all regions in parallel — much faster than sequential
+    const settled = await Promise.allSettled(
+      US_REGIONS.map(async ([s, w, n, e]) => {
+        const label = `${s},${w},${n},${e}`;
         const nodes = await fetchOverpassRegion(s, w, n, e);
+        return { label, nodes };
+      })
+    );
+
+    for (const result of settled) {
+      if (result.status === "fulfilled") {
+        const { label, nodes } = result.value;
         let added = 0;
         for (const node of nodes) {
           if (!seen.has(node.id)) {
@@ -86,10 +94,9 @@ router.post("/admin/seed-rest-areas", async (req, res): Promise<void> => {
           }
         }
         regionResults[label] = added;
-      } catch {
-        regionResults[label] = -1; // mark as failed
+      } else {
+        regionResults["error"] = (regionResults["error"] ?? 0) + 1;
       }
-      await sleep(700); // be polite to Overpass
     }
 
     // Filter to clean US-only named nodes
