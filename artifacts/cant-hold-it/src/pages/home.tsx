@@ -93,17 +93,18 @@ export default function Home() {
     setSuggestions([]);
   }, []);
 
-  // Geocode: if 1 result auto-select; if multiple show picker
+  // Geocode: always activate proximity filter with the top result immediately;
+  // if multiple results, also show disambiguation dropdown so user can refine
   const runGeocode = useCallback(async (q: string) => {
     if (!q.trim()) { setSearchCenter(null); setSuggestions([]); return; }
     const results = await geocodeSuggest(q);
     if (results.length === 0) return;
-    if (results.length === 1) {
-      pickSuggestion(results[0]);
-    } else {
-      setSuggestions(results);
+    // Always lock in the best (first) result so proximity filter activates
+    setSearchCenter({ lat: results[0].lat, lng: results[0].lng });
+    if (results.length > 1) {
+      setSuggestions(results); // let user optionally pick a different one
     }
-  }, [pickSuggestion]);
+  }, []);
 
   // Debounce timer ref — cancelled on Enter/button tap so it fires immediately
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
