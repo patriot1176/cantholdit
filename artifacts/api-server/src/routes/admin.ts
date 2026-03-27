@@ -1,61 +1,65 @@
 import { Router, type IRouter } from "express";
-import { db, stopsTable } from "@workspace/db";
+import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
 const router: IRouter = Router();
 
 const ADMIN_KEY = process.env.ADMIN_SEED_KEY || "cant-hold-it-seed";
 
-// HIFLD Rest Areas ArcGIS REST API
-// Dataset: Interstate Rest Areas (US DOT / FHWA)
-// https://hifld-geoplatform.opendata.arcgis.com/datasets/rest-areas
-const HIFLD_BASE =
-  "https://services1.arcgis.com/Hp6G80Pky0om7QvQ/arcgis/rest/services/Rest_Areas/FeatureServer/0/query";
+// Continental US broken into manageable tiles so each Overpass query is fast
+const US_REGIONS: [number, number, number, number][] = [
+  [24, -125, 32, -114], // Southern CA, AZ, NM south
+  [32, -125, 42, -114], // Northern CA, NV, UT west
+  [42, -124, 49, -114], // OR, WA, ID west
+  [36, -114, 49, -104], // UT east, CO, WY, MT, ID east
+  [24, -114, 36, -96],  // TX, OK, NM north, CO south
+  [36, -104, 42, -96],  // KS, NE, SD south
+  [42, -104, 49, -96],  // SD north, ND, MN west
+  [36, -96,  42, -88],  // MO, IA, IL, WI south
+  [42, -96,  49, -88],  // MN east, WI north
+  [36, -88,  42, -80],  // IN, OH, KY
+  [42, -88,  46, -80],  // MI
+  [36, -80,  42, -74],  // WV, VA, PA, NY south, NJ
+  [42, -80,  47, -70],  // NY north, CT, MA, VT, NH
+  [24, -88,  36, -76],  // TN, NC, SC, GA, AL, MS, FL
+  [36, -76,  40, -66],  // MD, DE, DC, NC coast, New England coast
+];
 
-interface HifldFeature {
-  attributes: {
-    NAME: string;
-    ADDRESS: string | null;
-    CITY: string | null;
-    STATE: string | null;
-    ZIP: string | null;
-    TPID: string | null;
-    DIRECTION: string | null;
-    MAINTAINER: string | null;
-    LATITUDE: number;
-    LONGITUDE: number;
-  };
-  geometry: { x: number; y: number };
+interface OsmNode {
+  id: number;
+  lat: number;
+  lon: number;
+  tags: Record<string, string>;
 }
 
-async function fetchHifldPage(offset: number, limit = 1000): Promise<HifldFeature[]> {
-  const params = new URLSearchParams({
-    where: "1=1",
-    outFields: "NAME,ADDRESS,CITY,STATE,ZIP,TPID,DIRECTION,MAINTAINER,LATITUDE,LONGITUDE",
-    outSR: "4326",
-    f: "json",
-    resultOffset: String(offset),
-    resultRecordCount: String(limit),
-  });
-  const res = await fetch(`${HIFLD_BASE}?${params}`, {
-    headers: { "User-Agent": "CantHoldIt-Seed/1.0" },
+async function fetchOverpassRegion(
+  s: number, w: number, n: number, e: number
+): Promise<OsmNode[]> {
+  const query = `[out:json][timeout:25];node["highway"="rest_area"]["name"](${s},${w},${n},${e});out body;`;
+  const res = await fetch("https://overpass.kumi.systems/api/interpreter", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "data=" + encodeURIComponent(query),
     signal: AbortSignal.timeout(30000),
   });
-  if (!res.ok) throw new Error(`HIFLD HTTP ${res.status}`);
+  if (!res.ok) return [];
   const data = await res.json();
-  if (data.error) throw new Error(`HIFLD error: ${data.error.message}`);
-  return data.features ?? [];
+  return data.elements ?? [];
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 /**
- * POST /admin/seed-rest-areas?key=<ADMIN_SEED_KEY>
+ * POST /api/admin/seed-rest-areas?key=<ADMIN_SEED_KEY>
  *
- * Fetches up to 2,000 US Interstate rest areas from the HIFLD federal dataset
- * and inserts them into the stops table.  Already-existing stops (matched by
- * proximity within ~100 m) are skipped.
+ * Fetches named US highway rest areas from OpenStreetMap via Overpass API,
+ * covering the full continental US in 15 regional tiles.
+ * Already-existing stops (within ~1 km of an existing rest_area) are skipped.
  *
- * Protect with the ADMIN_SEED_KEY environment variable (default: cant-hold-it-seed).
- * Run once after deploying; safe to re-run (duplicates are skipped).
+ * Protect with the ADMIN_SEED_KEY env var (default: cant-hold-it-seed).
+ * Safe to re-run — duplicates are always skipped.
  */
 router.post("/admin/seed-rest-areas", async (req, res): Promise<void> => {
   if (req.query.key !== ADMIN_KEY) {
@@ -64,52 +68,62 @@ router.post("/admin/seed-rest-areas", async (req, res): Promise<void> => {
   }
 
   try {
-    // Fetch up to 2 pages (2 × 1000) to cover the full dataset (~1,500 records)
-    const page1 = await fetchHifldPage(0, 1000);
-    let page2: HifldFeature[] = [];
-    if (page1.length === 1000) {
-      page2 = await fetchHifldPage(1000, 1000);
-    }
-    const all = [...page1, ...page2];
+    // Collect all OSM nodes, deduplicating by node ID across tiles
+    const seen = new Set<number>();
+    const allNodes: OsmNode[] = [];
+    const regionResults: Record<string, number> = {};
 
-    if (all.length === 0) {
-      res.json({ inserted: 0, skipped: 0, message: "HIFLD returned 0 features" });
-      return;
+    for (const [s, w, n, e] of US_REGIONS) {
+      const label = `${s},${w},${n},${e}`;
+      try {
+        const nodes = await fetchOverpassRegion(s, w, n, e);
+        let added = 0;
+        for (const node of nodes) {
+          if (!seen.has(node.id)) {
+            seen.add(node.id);
+            allNodes.push(node);
+            added++;
+          }
+        }
+        regionResults[label] = added;
+      } catch {
+        regionResults[label] = -1; // mark as failed
+      }
+      await sleep(700); // be polite to Overpass
     }
 
-    // Map to our schema
-    const rows = all
-      .filter((f) => {
-        const lat = f.attributes.LATITUDE ?? f.geometry?.y;
-        const lng = f.attributes.LONGITUDE ?? f.geometry?.x;
-        const name = f.attributes.NAME;
-        return name && lat && lng && lat > 24 && lat < 50 && lng > -125 && lng < -66;
+    // Filter to clean US-only named nodes
+    const REJECT_NAMES = /^(Halte |Baños|Canchas|Tienda|jardin|jardín)/i;
+    const rows = allNodes
+      .filter((n) => {
+        const name = n.tags?.name || "";
+        return (
+          name.length >= 4 &&
+          !REJECT_NAMES.test(name) &&
+          n.lat > 24.4 && n.lat < 49.5 &&
+          n.lon > -124.8 && n.lon < -66.9
+        );
       })
-      .map((f) => {
-        const lat = f.attributes.LATITUDE ?? f.geometry.y;
-        const lng = f.attributes.LONGITUDE ?? f.geometry.x;
-        const nameParts = [f.attributes.NAME];
-        if (f.attributes.DIRECTION) nameParts.push(`(${f.attributes.DIRECTION})`);
-        const name = nameParts.join(" ");
-
+      .map((n) => {
         const addrParts = [
-          f.attributes.ADDRESS,
-          f.attributes.CITY,
-          f.attributes.STATE,
-          f.attributes.ZIP,
+          n.tags["addr:street"],
+          n.tags["addr:city"],
+          n.tags["addr:state"],
         ].filter(Boolean);
-        const address = addrParts.length > 0 ? addrParts.join(", ") : "US Interstate Rest Area";
-
-        return { name, address, lat, lng };
+        return {
+          name: n.tags.name,
+          address: addrParts.length > 0 ? addrParts.join(", ") : (n.tags.operator || "US Highway Rest Area"),
+          lat: n.lat,
+          lng: n.lon,
+          hours: n.tags.opening_hours ?? null,
+        };
       });
 
-    // Bulk upsert — skip rows that already have a rest_area within ~0.01° (~1 km)
-    // We use a temp CTE to avoid touching existing rows
+    // Insert, skipping anything within ~0.01° (~1 km) of an existing rest_area
     let inserted = 0;
     let skipped = 0;
 
     for (const row of rows) {
-      // Check proximity: skip if there's already a stop within ~0.01 degrees
       const nearby = await db.execute(sql`
         SELECT id FROM stops
         WHERE type = 'rest_area'
@@ -122,18 +136,19 @@ router.post("/admin/seed-rest-areas", async (req, res): Promise<void> => {
         continue;
       }
       await db.execute(sql`
-        INSERT INTO stops (name, address, type, lat, lng)
-        VALUES (${row.name}, ${row.address}, 'rest_area', ${row.lat}, ${row.lng})
+        INSERT INTO stops (name, address, type, lat, lng, hours)
+        VALUES (${row.name}, ${row.address}, 'rest_area', ${row.lat}, ${row.lng}, ${row.hours})
       `);
       inserted++;
     }
 
     res.json({
       message: "Seed complete",
-      hifldTotal: all.length,
+      osmTotal: allNodes.length,
       filtered: rows.length,
       inserted,
       skipped,
+      regions: regionResults,
     });
   } catch (err: any) {
     console.error("Seed error:", err);
