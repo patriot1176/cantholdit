@@ -1,10 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import { Link } from "wouter";
-import { Loader2, MapPin } from "lucide-react";
 import type { Stop } from "@workspace/api-client-react";
-import type { LocationPermission } from "@/hooks/use-location";
 
 // Continental US bounds
 const US_BOUNDS = L.latLngBounds(
@@ -14,13 +12,6 @@ const US_BOUNDS = L.latLngBounds(
 
 const US_CENTER: [number, number] = [39.5, -98.35];
 const US_ZOOM = 4;
-
-// iOS-safe GPS options — avoids high-accuracy GPS chip, uses WiFi/cell instead
-const GEO_OPTIONS: PositionOptions = {
-  enableHighAccuracy: false,
-  timeout: 10000,
-  maximumAge: 300000,
-};
 
 const createMarkerIcon = (rating: number | null) => {
   let color = "#94a3b8";
@@ -70,76 +61,33 @@ const mapBtnClass =
 export function MapView({
   stops,
   userLocation,
-  locationPermission,
-  onRequestLocation,
+  searchCenter,
 }: {
   stops: Stop[];
   userLocation: { lat: number; lng: number } | null;
-  locationPermission: LocationPermission;
-  onRequestLocation: () => void;
+  searchCenter: { lat: number; lng: number } | null;
 }) {
   const mapRef = useRef<L.Map | null>(null);
-  const [isLocating, setIsLocating] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
-  const [bannerDismissed, setBannerDismissed] = useState(false);
-  const hasFlewToUser = useRef(false);
 
-  // Fly to user location once when it first becomes available
+  // Fly to geocoded search result when it changes
   useEffect(() => {
-    if (userLocation && mapRef.current && !hasFlewToUser.current) {
+    if (searchCenter && mapRef.current) {
+      mapRef.current.flyTo([searchCenter.lat, searchCenter.lng], 9, {
+        duration: 1.2,
+      });
+    }
+  }, [searchCenter]);
+
+  // Silently fly to GPS location once if it comes in and no search has been done
+  const hasFlewToUser = useRef(false);
+  useEffect(() => {
+    if (userLocation && mapRef.current && !hasFlewToUser.current && !searchCenter) {
       hasFlewToUser.current = true;
       mapRef.current.flyTo([userLocation.lat, userLocation.lng], 9, {
         duration: 1.5,
       });
     }
-  }, [userLocation]);
-
-  const showToast = (msg: string, autoDismiss = 0) => {
-    setToast(msg);
-    if (autoDismiss > 0) setTimeout(() => setToast(null), autoDismiss);
-  };
-
-  // Recenter button: always triggered by user gesture, safe on all platforms
-  const handleRecenter = () => {
-    if (!navigator.geolocation) {
-      mapRef.current?.flyTo(US_CENTER, US_ZOOM, { duration: 1.2 });
-      return;
-    }
-    setIsLocating(true);
-    showToast("Locating you...");
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        mapRef.current?.flyTo(
-          [pos.coords.latitude, pos.coords.longitude],
-          9,
-          { duration: 1.5 }
-        );
-        setIsLocating(false);
-        setToast(null);
-        hasFlewToUser.current = true;
-      },
-      (err) => {
-        setIsLocating(false);
-        if (err.code === err.PERMISSION_DENIED) {
-          showToast("Location blocked — enable in browser settings", 3500);
-        } else if (err.code === err.TIMEOUT) {
-          showToast("Location timed out — try again", 2500);
-        } else {
-          showToast("GPS unavailable — showing full US", 2500);
-          mapRef.current?.flyTo(US_CENTER, US_ZOOM, { duration: 1.2 });
-        }
-      },
-      GEO_OPTIONS
-    );
-  };
-
-  // Show banner when permission hasn't been asked yet and user hasn't dismissed it
-  const showLocationBanner =
-    locationPermission === "idle" && !bannerDismissed;
-
-  // Show a denied hint (subtle, not a modal)
-  const showDeniedHint =
-    locationPermission === "denied" && !bannerDismissed;
+  }, [userLocation, searchCenter]);
 
   return (
     <div className="relative w-full h-full bg-slate-100 z-0">
@@ -158,7 +106,7 @@ export function MapView({
           url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
         />
 
-        {/* User location dot */}
+        {/* Silent GPS bonus — blue dot if location is available */}
         {userLocation && (
           <Marker
             position={[userLocation.lat, userLocation.lng]}
@@ -210,65 +158,8 @@ export function MapView({
         ))}
       </MapContainer>
 
-      {/* Location permission banner — shown when never asked, dismissed on tap */}
-      {showLocationBanner && (
-        <div className="absolute top-20 left-3 right-3 z-[500]">
-          <div className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl shadow-black/10 border border-border/50 px-4 py-3 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-              <MapPin className="w-4 h-4 text-primary" />
-            </div>
-            <p className="flex-1 text-sm font-medium text-foreground leading-snug">
-              Allow location to find stops near you 📍
-            </p>
-            <div className="flex gap-2 shrink-0">
-              <button
-                onClick={() => setBannerDismissed(true)}
-                className="text-xs text-muted-foreground font-medium px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"
-              >
-                Not now
-              </button>
-              <button
-                onClick={() => {
-                  setBannerDismissed(true);
-                  onRequestLocation();
-                }}
-                className="text-xs font-bold text-white bg-primary px-3 py-1.5 rounded-lg active:scale-95 transition-all shadow-sm"
-              >
-                Allow
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Denied hint — subtle pill below search bar */}
-      {showDeniedHint && (
-        <div className="absolute top-20 left-3 right-3 z-[500]">
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-center gap-3">
-            <span className="text-lg">🔒</span>
-            <p className="flex-1 text-xs font-medium text-amber-800 leading-snug">
-              Location blocked. Enable it in your browser settings to see nearby stops.
-            </p>
-            <button
-              onClick={() => setBannerDismissed(true)}
-              className="text-amber-600 text-xs font-bold shrink-0"
-            >
-              OK
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Toast overlay */}
-      {toast && (
-        <div className="absolute bottom-20 right-4 z-[500] bg-black/75 text-white text-xs font-semibold px-3 py-2 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
-          {toast}
-        </div>
-      )}
-
-      {/* Right-side controls: + / − / 📍 stacked top-to-bottom */}
+      {/* Zoom controls */}
       <div className="absolute bottom-6 right-4 z-[400] flex flex-col gap-2">
-        {/* Zoom in */}
         <button
           onClick={() => mapRef.current?.zoomIn(1)}
           className={mapBtnClass}
@@ -276,28 +167,12 @@ export function MapView({
         >
           <span className="text-xl font-bold text-slate-700 leading-none select-none">+</span>
         </button>
-
-        {/* Zoom out */}
         <button
           onClick={() => mapRef.current?.zoomOut(1)}
           className={mapBtnClass}
           aria-label="Zoom out"
         >
           <span className="text-2xl font-bold text-slate-700 leading-none select-none">−</span>
-        </button>
-
-        {/* Re-center */}
-        <button
-          onClick={handleRecenter}
-          disabled={isLocating}
-          className={`${mapBtnClass} disabled:opacity-60`}
-          aria-label="Re-center map"
-        >
-          {isLocating ? (
-            <Loader2 className="w-5 h-5 text-primary animate-spin" />
-          ) : (
-            <span className="text-xl leading-none">📍</span>
-          )}
         </button>
       </div>
     </div>

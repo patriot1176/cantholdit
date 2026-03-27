@@ -82,11 +82,17 @@
     box-sizing: border-box;
   }
   html, body {
-    width: 100%;
+    width: 100vw;
     max-width: 100vw;
     overflow-x: hidden;
     margin: 0;
     padding: 0;
+  }
+  /* Constrain app images/svgs but exclude Leaflet tiles which need exact pixel dimensions */
+  img:not(.leaflet-tile):not([class*="leaflet"]),
+  video {
+    max-width: 100%;
+    height: auto;
   }
   body {
     @apply bg-background text-foreground antialiased font-sans selection:bg-primary/20 selection:text-primary;
@@ -103,6 +109,8 @@
 .leaflet-container {
   font-family: var(--font-sans);
   z-index: 10;
+  width: 100% !important;
+  max-width: 100vw !important;
 }
 .leaflet-popup-content-wrapper {
   border-radius: 1rem;

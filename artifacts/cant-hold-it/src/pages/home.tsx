@@ -1,8 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout";
 import { MapView } from "@/components/map-view";
 import { useLocation } from "@/hooks/use-location";
-
 import { useGetStops } from "@workspace/api-client-react";
 import { Search, Loader2, Map as MapIcon, List, Trophy, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -11,15 +10,54 @@ import { FlushRating } from "@/components/flush-rating";
 
 type ViewMode = "map" | "list" | "top";
 
+async function geocodeQuery(
+  q: string
+): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=us`,
+      { headers: { "Accept-Language": "en" } }
+    );
+    const data = await res.json();
+    if (data.length > 0) {
+      return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+    }
+  } catch {
+    // silently ignore network errors
+  }
+  return null;
+}
+
 export default function Home() {
-  const { location, permission, requestLocation } = useLocation();
+  const { location } = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchCenter, setSearchCenter] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("map");
+
+  // Debounced Nominatim geocoding — runs 600ms after the user stops typing
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchCenter(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const result = await geocodeQuery(searchQuery);
+      if (result) setSearchCenter(result);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Use geocoded location for proximity, fall back to silent GPS, then nothing
+  const proximityLat = searchCenter?.lat ?? location?.lat;
+  const proximityLng = searchCenter?.lng ?? location?.lng;
 
   const { data: stops, isLoading } = useGetStops(
     {
-      lat: location?.lat,
-      lng: location?.lng,
+      lat: proximityLat,
+      lng: proximityLng,
       query: searchQuery || undefined,
     },
     { query: { keepPreviousData: true } }
@@ -46,12 +84,12 @@ export default function Home() {
     <Layout>
       {/* Search bar + tab switcher */}
       <div className="absolute top-4 left-4 right-4 z-10 flex gap-2">
-        <div className="flex-1 bg-white/90 backdrop-blur-xl rounded-2xl shadow-lg shadow-black/5 border border-white/50 flex items-center px-4 py-3 focus-within:ring-2 focus-within:ring-primary/50 transition-all">
+        <div className="flex-1 bg-white/90 backdrop-blur-xl rounded-2xl shadow-lg shadow-black/5 border border-white/50 flex items-center px-4 py-3 focus-within:ring-2 focus-within:ring-primary/50 transition-all min-w-0">
           <Search className="w-5 h-5 text-muted-foreground mr-3 shrink-0" />
           <input
             type="text"
-            placeholder="Search stops, highways, cities..."
-            className="flex-1 bg-transparent border-none outline-none font-medium placeholder:text-muted-foreground text-sm"
+            placeholder="Search your location, city, highway..."
+            className="flex-1 bg-transparent border-none outline-none font-medium placeholder:text-muted-foreground text-sm min-w-0"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -80,7 +118,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Floating Add Stop button — left side, above leaderboard FAB */}
+      {/* Floating Add Stop button */}
       {viewMode !== "top" && (
         <Link href="/add-stop">
           <motion.button
@@ -121,8 +159,7 @@ export default function Home() {
               <MapView
                 stops={stops || []}
                 userLocation={location}
-                locationPermission={permission}
-                onRequestLocation={requestLocation}
+                searchCenter={searchCenter}
               />
             </motion.div>
           )}
@@ -136,7 +173,6 @@ export default function Home() {
               exit={{ opacity: 0, y: -20 }}
               className="absolute inset-0 bg-background overflow-y-auto pt-24 pb-28 px-4 flex flex-col gap-4"
             >
-              {/* USA badge */}
               <div className="flex items-center justify-center pt-1">
                 <span className="text-[11px] font-bold text-muted-foreground/60 tracking-wide">
                   🇺🇸 America's Road Trip Bathroom Rater
@@ -204,7 +240,6 @@ export default function Home() {
               exit={{ opacity: 0, y: -20 }}
               className="absolute inset-0 bg-background overflow-y-auto pt-24 pb-8 px-4 flex flex-col gap-6"
             >
-              {/* USA badge */}
               <div className="flex items-center justify-center pt-1">
                 <span className="text-[11px] font-bold text-muted-foreground/60 tracking-wide">
                   🇺🇸 America's Road Trip Bathroom Rater
