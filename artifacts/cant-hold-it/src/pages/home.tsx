@@ -49,7 +49,7 @@ function haversineKm(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-const RADIUS_KM = 800;
+const RADIUS_KM = 300;
 
 export default function Home() {
   const { location } = useLocation();
@@ -134,14 +134,17 @@ export default function Home() {
     { query: { keepPreviousData: true } }
   );
 
-  // Client-side proximity filter: within 800km of searchCenter; no fallback so empty state shows
+  // Client-side proximity filter: within 300km of searchCenter; sorted nearest-first when searching
   const stops = (() => {
     if (!allStops) return undefined;
     const center = searchCenter;
     if (!center) return allStops;
-    return allStops.filter(
-      (s) => haversineKm(center.lat, center.lng, s.lat, s.lng) <= RADIUS_KM
-    );
+    return allStops
+      .filter((s) => haversineKm(center.lat, center.lng, s.lat, s.lng) <= RADIUS_KM)
+      .sort((a, b) =>
+        haversineKm(center.lat, center.lng, a.lat, a.lng) -
+        haversineKm(center.lat, center.lng, b.lat, b.lng)
+      );
   })();
 
   // True when user searched a location but no stops exist nearby
