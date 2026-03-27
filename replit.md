@@ -127,6 +127,22 @@ Community-rated restroom and rest stop finder for US road trippers. Tagline: "Be
 - `ratings` — 6 numeric columns + comment, FK to stops
 - `photos` — objectPath, FK to stops (cascade delete)
 
+### Admin Seed Endpoint (HIFLD Import)
+
+`POST /api/admin/seed-rest-areas?key=<ADMIN_SEED_KEY>`
+
+One-time import of ~1,500 US Interstate rest areas from the HIFLD federal dataset (FHWA/US DOT).
+
+**Usage after deploying:**
+```
+curl -X POST "https://your-app.replit.app/api/admin/seed-rest-areas?key=cant-hold-it-seed"
+```
+
+- Protected by `ADMIN_SEED_KEY` env var (default: `cant-hold-it-seed`) — set a stronger key in production via Secrets
+- Skips stops already within 0.01° of an existing rest_area (safe to re-run)
+- Returns JSON: `{ inserted, skipped, hifldTotal, filtered }`
+- File: `artifacts/api-server/src/routes/admin.ts`
+
 ### Key Implementation Notes
 - Pin colors are hardcoded hex — CSS variables don't work in Leaflet `divIcon` HTML
 - `leaflet.markercluster` used as `(L as any).markerClusterGroup(...)` to avoid TS type noise
