@@ -2,7 +2,7 @@ import { useRoute, Link } from "wouter";
 import { useGetStop } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout";
 import { FlushRating } from "@/components/flush-rating";
-import { ArrowLeft, MapPin, ShieldCheck, Sparkles, Wind, Lightbulb, Baby, PenLine, AlertTriangle } from "lucide-react";
+import { ArrowLeft, MapPin, ShieldCheck, Sparkles, Wind, Lightbulb, Baby, PenLine, AlertTriangle, Navigation } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { motion } from "framer-motion";
 
@@ -80,9 +80,20 @@ export default function StopDetail() {
                 <MapPin className="w-4 h-4 mr-1 shrink-0" />
                 <span className="truncate">{stop.address}</span>
               </div>
-              <span className="inline-block mt-3 px-2.5 py-1 bg-slate-200 text-slate-700 text-[10px] font-bold uppercase tracking-wider rounded-md">
-                {stop.type.replace('_', ' ')}
-              </span>
+              <div className="flex items-center gap-2 mt-3 flex-wrap">
+                <span className="px-2.5 py-1 bg-slate-200 text-slate-700 text-[10px] font-bold uppercase tracking-wider rounded-md">
+                  {stop.type.replace('_', ' ')}
+                </span>
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${stop.lat},${stop.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary text-white text-[11px] font-bold rounded-full shadow-sm shadow-primary/30 hover:bg-primary/90 active:scale-95 transition-all"
+                >
+                  <Navigation className="w-3 h-3" />
+                  Get Directions
+                </a>
+              </div>
             </div>
 
             <div className="flex flex-col items-end shrink-0">

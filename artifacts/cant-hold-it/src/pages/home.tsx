@@ -3,7 +3,7 @@ import { Layout } from "@/components/layout";
 import { MapView } from "@/components/map-view";
 import { useLocation } from "@/hooks/use-location";
 import { useGetStops } from "@workspace/api-client-react";
-import { Search, Loader2, Map as MapIcon, List, Trophy, Plus } from "lucide-react";
+import { Search, Loader2, Map as MapIcon, List, Trophy, Plus, LocateFixed } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
 import { FlushRating } from "@/components/flush-rating";
@@ -57,6 +57,32 @@ export default function Home() {
   const [searchCenter, setSearchCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [suggestions, setSuggestions] = useState<GeoResult[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("map");
+  const [locating, setLocating] = useState(false);
+  const [locateError, setLocateError] = useState<string | null>(null);
+
+  const locateMe = useCallback(() => {
+    if (!("geolocation" in navigator)) {
+      setLocateError("GPS not available on this device");
+      return;
+    }
+    setLocating(true);
+    setLocateError(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false);
+        const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setSearchCenter(coords);
+        setSearchQuery("Near me");
+        setSuggestions([]);
+      },
+      () => {
+        setLocating(false);
+        setLocateError("Location access denied — check your browser settings");
+        setTimeout(() => setLocateError(null), 4000);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  }, []);
 
   // Pick a suggestion: set map center, clear dropdown
   const pickSuggestion = useCallback((r: GeoResult) => {
@@ -139,7 +165,24 @@ export default function Home() {
       {/* Search bar + tab switcher */}
       <div className="absolute top-4 left-4 right-4 z-10 flex flex-col gap-2">
         <div className="flex gap-2">
-          <div className="flex-1 bg-white/90 backdrop-blur-xl rounded-2xl shadow-lg shadow-black/5 border border-white/50 flex items-center px-4 py-3 focus-within:ring-2 focus-within:ring-primary/50 transition-all min-w-0">
+          <div className="flex-1 bg-white/90 backdrop-blur-xl rounded-2xl shadow-lg shadow-black/5 border border-white/50 flex items-center px-3 py-3 focus-within:ring-2 focus-within:ring-primary/50 transition-all min-w-0">
+            {/* Near Me button */}
+            <button
+              type="button"
+              onClick={locateMe}
+              disabled={locating}
+              className={`shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-all mr-2 ${
+                locating
+                  ? "bg-primary/10 text-primary"
+                  : "bg-slate-100 text-slate-500 hover:bg-primary/10 hover:text-primary active:scale-95"
+              }`}
+              aria-label="Find stops near me"
+            >
+              {locating
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <LocateFixed className="w-4 h-4" />
+              }
+            </button>
             <input
               type="text"
               inputMode="search"
@@ -182,6 +225,21 @@ export default function Home() {
             })}
           </div>
         </div>
+
+        {/* Location error toast */}
+        <AnimatePresence>
+          {locateError && (
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 text-sm font-medium text-red-700 flex items-center gap-2"
+            >
+              <LocateFixed className="w-4 h-4 shrink-0" />
+              {locateError}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Disambiguation dropdown — shown when multiple results match */}
         {suggestions.length > 1 && (
