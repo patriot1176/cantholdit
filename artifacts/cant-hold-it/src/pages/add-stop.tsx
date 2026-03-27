@@ -8,7 +8,7 @@ import { Link, useLocation as useWouterLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useLocation as useGpsLocation } from "@/hooks/use-location";
+import { readGpsFromSession } from "@/hooks/use-location";
 
 const stopTypes = [
   { value: "rest_area", label: "🛣️ Rest Area", desc: "State/highway rest area" },
@@ -83,17 +83,12 @@ export default function AddStop() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [createdId, setCreatedId] = useState<number | null>(null);
 
-  // Silently grab GPS so we can bias the location search
-  const { location: gpsLocation } = useGpsLocation();
-
   // Location search state
   const [locationQuery, setLocationQuery] = useState("");
   const [suggestions, setSuggestions] = useState<GeoSuggestion[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<GeoSuggestion | null>(null);
   const [searching, setSearching] = useState(false);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const gpsLocationRef = useRef(gpsLocation);
-  useEffect(() => { gpsLocationRef.current = gpsLocation; }, [gpsLocation]);
 
   const createStop = useCreateStop({
     mutation: {
@@ -126,7 +121,7 @@ export default function AddStop() {
     }
     debounceTimer.current = setTimeout(async () => {
       setSearching(true);
-      const results = await searchPlaces(locationQuery, gpsLocationRef.current);
+      const results = await searchPlaces(locationQuery, readGpsFromSession());
       setSuggestions(results);
       setSearching(false);
     }, 400);
