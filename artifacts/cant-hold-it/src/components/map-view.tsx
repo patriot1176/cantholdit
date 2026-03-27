@@ -1,85 +1,123 @@
-import { useEffect, useState, useMemo } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { useEffect, useRef, useState } from "react";
+import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import { Link } from "wouter";
-import { Navigation, Star } from "lucide-react";
+import { Navigation, Loader2 } from "lucide-react";
 import type { Stop } from "@workspace/api-client-react";
 
-// Component to handle map re-centering
-function LocationUpdater({ center }: { center: [number, number] | null }) {
-  const map = useMap();
-  useEffect(() => {
-    if (center) {
-      map.flyTo(center, 14, { duration: 1.5 });
-    }
-  }, [center, map]);
-  return null;
-}
+// Continental US bounds
+const US_BOUNDS = L.latLngBounds(
+  [24.396308, -125.001651],
+  [49.384358, -66.93457]
+);
+
+const US_CENTER: [number, number] = [39.5, -98.35];
+const US_ZOOM = 5;
 
 const createMarkerIcon = (rating: number | null) => {
-  // Use hardcoded hex colors — CSS vars don't work inside Leaflet's divIcon HTML
-  let color = '#94a3b8';
-  let shadowColor = 'rgba(148,163,184,0.4)';
+  let color = "#94a3b8";
+  let shadowColor = "rgba(148,163,184,0.4)";
 
   if (rating !== null) {
     if (rating >= 4.0) {
-      color = '#22c55e';        // green
-      shadowColor = 'rgba(34,197,94,0.4)';
+      color = "#22c55e";
+      shadowColor = "rgba(34,197,94,0.4)";
     } else if (rating >= 3.0) {
-      color = '#f59e0b';        // yellow/amber
-      shadowColor = 'rgba(245,158,11,0.4)';
+      color = "#f59e0b";
+      shadowColor = "rgba(245,158,11,0.4)";
     } else {
-      color = '#ef4444';        // red
-      shadowColor = 'rgba(239,68,68,0.4)';
+      color = "#ef4444";
+      shadowColor = "rgba(239,68,68,0.4)";
     }
   }
 
   return L.divIcon({
-    className: 'custom-marker',
+    className: "custom-marker",
     html: `
       <div style="
-        background-color: ${color}; 
-        width: 36px; 
-        height: 36px; 
-        border-radius: 50%; 
-        border: 3px solid white; 
-        box-shadow: 0 4px 12px -2px ${shadowColor}; 
-        display: flex; 
-        align-items: center; 
-        justify-content: center; 
+        background-color: ${color};
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        border: 3px solid white;
+        box-shadow: 0 4px 12px -2px ${shadowColor};
+        display: flex;
+        align-items: center;
+        justify-content: center;
         font-size: 16px;
         cursor: pointer;
       ">
         🚽
       </div>
     `,
-    iconSize: [32, 32],
-    iconAnchor: [16, 32],
-    popupAnchor: [0, -32],
+    iconSize: [36, 36],
+    iconAnchor: [18, 36],
+    popupAnchor: [0, -36],
   });
 };
 
-export function MapView({ 
-  stops, 
-  userLocation 
-}: { 
-  stops: Stop[], 
-  userLocation: { lat: number, lng: number } | null 
+export function MapView({
+  stops,
+  userLocation,
+}: {
+  stops: Stop[];
+  userLocation: { lat: number; lng: number } | null;
 }) {
-  const defaultCenter: [number, number] = [40.2, -87.5]; // Midwest corridor center
-  const [activeCenter, setActiveCenter] = useState<[number, number] | null>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const hasFlewToUser = useRef(false);
 
+  // Fly to user location once when it first becomes available
   useEffect(() => {
-    if (userLocation && !activeCenter) {
-      setActiveCenter([userLocation.lat, userLocation.lng]);
+    if (userLocation && mapRef.current && !hasFlewToUser.current) {
+      hasFlewToUser.current = true;
+      mapRef.current.flyTo([userLocation.lat, userLocation.lng], 13, {
+        duration: 1.5,
+      });
     }
-  }, [userLocation, activeCenter]);
+  }, [userLocation]);
+
+  const showToast = (msg: string, autoDismiss = 0) => {
+    setToast(msg);
+    if (autoDismiss > 0) setTimeout(() => setToast(null), autoDismiss);
+  };
+
+  const handleRecenter = () => {
+    if (!navigator.geolocation) {
+      mapRef.current?.flyTo(US_CENTER, US_ZOOM, { duration: 1.2 });
+      return;
+    }
+    setIsLocating(true);
+    showToast("Locating you...");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        mapRef.current?.flyTo(
+          [pos.coords.latitude, pos.coords.longitude],
+          14,
+          { duration: 1.5 }
+        );
+        setIsLocating(false);
+        setToast(null);
+      },
+      () => {
+        mapRef.current?.flyTo(US_CENTER, US_ZOOM, { duration: 1.2 });
+        setIsLocating(false);
+        showToast("GPS unavailable — showing full US", 2500);
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+    );
+  };
 
   return (
     <div className="relative w-full h-full bg-slate-100 z-0">
-      <MapContainer 
-        center={defaultCenter} 
-        zoom={5} 
+      <MapContainer
+        ref={mapRef}
+        center={US_CENTER}
+        zoom={US_ZOOM}
+        minZoom={4}
+        maxBounds={US_BOUNDS}
+        maxBoundsViscosity={1.0}
         zoomControl={false}
         className="w-full h-full"
       >
@@ -87,37 +125,42 @@ export function MapView({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
         />
-        
-        <LocationUpdater center={activeCenter} />
 
-        {/* User Location Marker */}
+        {/* User location dot */}
         {userLocation && (
-          <Marker 
+          <Marker
             position={[userLocation.lat, userLocation.lng]}
             icon={L.divIcon({
-              className: 'user-marker',
-              html: `<div class="w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg shadow-blue-500/50 animate-pulse"></div>`,
-              iconSize: [16, 16],
+              className: "user-marker",
+              html: `<div style="width:14px;height:14px;background:#3b82f6;border-radius:50%;border:2.5px solid white;box-shadow:0 0 0 4px rgba(59,130,246,0.25)"></div>`,
+              iconSize: [14, 14],
+              iconAnchor: [7, 7],
             })}
           />
         )}
 
-        {/* Stop Markers */}
-        {stops.map(stop => (
-          <Marker 
-            key={stop.id} 
+        {/* Stop markers */}
+        {stops.map((stop) => (
+          <Marker
+            key={stop.id}
             position={[stop.lat, stop.lng]}
             icon={createMarkerIcon(stop.overallRating)}
           >
             <Popup className="custom-popup">
               <div className="p-3 min-w-[200px]">
-                <h3 className="font-display font-bold text-lg leading-tight mb-1">{stop.name}</h3>
-                <p className="text-xs text-muted-foreground mb-3">{stop.type.replace('_', ' ').toUpperCase()}</p>
-                
+                <h3 className="font-display font-bold text-lg leading-tight mb-1">
+                  {stop.name}
+                </h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  {stop.type.replace("_", " ").toUpperCase()}
+                </p>
+
                 <div className="flex items-center gap-1 bg-slate-50 p-2 rounded-lg mb-3">
                   <span className="text-xl">🚽</span>
                   <span className="font-bold text-foreground ml-1">
-                    {stop.overallRating ? stop.overallRating.toFixed(1) : 'N/A'}
+                    {stop.overallRating
+                      ? stop.overallRating.toFixed(1)
+                      : "N/A"}
                   </span>
                   <span className="text-xs text-muted-foreground ml-1">
                     ({stop.totalRatings} ratings)
@@ -136,15 +179,26 @@ export function MapView({
         ))}
       </MapContainer>
 
-      {/* Recenter Button */}
-      {userLocation && (
-        <button 
-          onClick={() => setActiveCenter([userLocation.lat, userLocation.lng])}
-          className="absolute bottom-6 right-4 z-[400] bg-white p-3 rounded-full shadow-lg shadow-black/10 border border-border text-primary hover:bg-slate-50 active:scale-95 transition-all"
-        >
-          <Navigation className="w-6 h-6" />
-        </button>
+      {/* Toast overlay */}
+      {toast && (
+        <div className="absolute bottom-20 right-4 z-[500] bg-black/75 text-white text-xs font-semibold px-3 py-2 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+          {toast}
+        </div>
       )}
+
+      {/* Re-center button — always visible, bottom-right */}
+      <button
+        onClick={handleRecenter}
+        disabled={isLocating}
+        className="absolute bottom-6 right-4 z-[400] bg-white w-12 h-12 rounded-full shadow-lg shadow-black/10 border border-border flex items-center justify-center hover:bg-slate-50 active:scale-95 transition-all disabled:opacity-60"
+        aria-label="Re-center map"
+      >
+        {isLocating ? (
+          <Loader2 className="w-5 h-5 text-primary animate-spin" />
+        ) : (
+          <span className="text-xl leading-none">📍</span>
+        )}
+      </button>
     </div>
   );
 }

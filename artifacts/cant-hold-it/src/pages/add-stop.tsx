@@ -129,6 +129,11 @@ export default function AddStop() {
           <span>Adding a stop helps thousands of road trippers find relief. You're a hero.</span>
         </div>
 
+        <div className="flex items-center justify-center gap-2 text-xs font-semibold text-muted-foreground/70 tracking-wide">
+          <span>🇺🇸</span>
+          <span>US locations only for now</span>
+        </div>
+
         {/* Name */}
         <div className="bg-white p-5 rounded-3xl shadow-sm border border-border flex flex-col gap-2">
           <label className="font-display font-bold text-base text-foreground">
