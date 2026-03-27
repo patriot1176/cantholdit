@@ -44,7 +44,7 @@ function haversineKm(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-const RADIUS_KM = 500;
+const RADIUS_KM = 800;
 
 export default function Home() {
   const { location } = useLocation();
@@ -85,16 +85,18 @@ export default function Home() {
     { query: { keepPreviousData: true } }
   );
 
-  // Client-side proximity filter: within 500km of searchCenter, fall back to all
+  // Client-side proximity filter: within 800km of searchCenter; no fallback so empty state shows
   const stops = (() => {
     if (!allStops) return undefined;
     const center = searchCenter;
     if (!center) return allStops;
-    const nearby = allStops.filter(
+    return allStops.filter(
       (s) => haversineKm(center.lat, center.lng, s.lat, s.lng) <= RADIUS_KM
     );
-    return nearby.length > 0 ? nearby : allStops; // fall back to nationwide if none nearby
   })();
+
+  // True when user searched a location but no stops exist nearby
+  const noStopsNearby = !!searchCenter && !!stops && stops.length === 0;
 
   // Leaderboard data derived from stops
   const royalFlushStops = [...(stops || [])]
@@ -118,15 +120,27 @@ export default function Home() {
       {/* Search bar + tab switcher */}
       <div className="absolute top-4 left-4 right-4 z-10 flex gap-2">
         <div className="flex-1 bg-white/90 backdrop-blur-xl rounded-2xl shadow-lg shadow-black/5 border border-white/50 flex items-center px-4 py-3 focus-within:ring-2 focus-within:ring-primary/50 transition-all min-w-0">
-          <Search className="w-5 h-5 text-muted-foreground mr-3 shrink-0" />
           <input
             type="text"
-            placeholder="Search your location, city, highway..."
+            inputMode="search"
+            enterKeyHint="search"
+            placeholder="City, highway, or state..."
             className="flex-1 bg-transparent border-none outline-none font-medium placeholder:text-muted-foreground text-sm min-w-0"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={handleSearchKeyDown}
           />
+          <button
+            type="button"
+            onClick={() => {
+              if (debounceTimer.current) clearTimeout(debounceTimer.current);
+              runGeocode(searchQuery);
+            }}
+            className="ml-2 shrink-0 w-8 h-8 bg-primary text-white rounded-xl flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all shadow-sm shadow-primary/30"
+            aria-label="Search"
+          >
+            <Search className="w-4 h-4" />
+          </button>
         </div>
 
         {/* 3-tab switcher */}
@@ -195,6 +209,35 @@ export default function Home() {
                 userLocation={location}
                 searchCenter={searchCenter}
               />
+
+              {/* Empty state overlay — no stops within 800km of search */}
+              {noStopsNearby && (
+                <div className="absolute bottom-24 left-4 right-4 z-[400] pointer-events-auto">
+                  <motion.div
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl border border-border p-5 flex flex-col items-center text-center gap-3"
+                  >
+                    <div className="text-4xl">🌵</div>
+                    <div>
+                      <p className="font-display font-bold text-foreground text-base leading-snug">
+                        No stops here yet
+                      </p>
+                      <p className="text-muted-foreground text-sm mt-0.5">
+                        Be the first to add one!
+                      </p>
+                    </div>
+                    <Link href="/add-stop" className="w-full">
+                      <motion.div
+                        whileTap={{ scale: 0.97 }}
+                        className="w-full bg-gradient-to-r from-primary to-blue-500 text-white py-3 px-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md shadow-primary/30 text-sm"
+                      >
+                        <Plus className="w-4 h-4" /> Add a Stop
+                      </motion.div>
+                    </Link>
+                  </motion.div>
+                </div>
+              )}
             </motion.div>
           )}
 
@@ -214,14 +257,28 @@ export default function Home() {
               </div>
 
               {stops?.length === 0 ? (
-                <div className="text-center py-20">
-                  <div className="text-6xl mb-4 grayscale opacity-50">🌵</div>
-                  <h3 className="font-display text-xl font-bold text-foreground">
-                    No stops found
-                  </h3>
-                  <p className="text-muted-foreground mt-2">
-                    Your bladder will have to wait.
-                  </p>
+                <div className="text-center py-16 flex flex-col items-center gap-4">
+                  <div className="text-6xl grayscale opacity-50">🌵</div>
+                  <div>
+                    <h3 className="font-display text-xl font-bold text-foreground">
+                      {noStopsNearby ? "No stops here yet" : "No stops found"}
+                    </h3>
+                    <p className="text-muted-foreground mt-1 text-sm">
+                      {noStopsNearby
+                        ? "Be the first to add one in this area!"
+                        : "Your bladder will have to wait."}
+                    </p>
+                  </div>
+                  {noStopsNearby && (
+                    <Link href="/add-stop" className="w-full max-w-xs">
+                      <motion.div
+                        whileTap={{ scale: 0.97 }}
+                        className="w-full bg-gradient-to-r from-primary to-blue-500 text-white py-3 px-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md shadow-primary/30"
+                      >
+                        <Plus className="w-4 h-4" /> Add a Stop
+                      </motion.div>
+                    </Link>
+                  )}
                 </div>
               ) : (
                 stops?.map((stop) => (

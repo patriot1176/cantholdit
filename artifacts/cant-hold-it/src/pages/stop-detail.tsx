@@ -90,6 +90,7 @@ export default function StopDetail() {
         </div>
       </div>
 
+      <div className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
       <div className="p-4 flex flex-col gap-6">
         
         {/* Badges */}
@@ -176,6 +177,7 @@ export default function StopDetail() {
           )}
         </div>
 
+      </div>
       </div>
     </Layout>
   );
