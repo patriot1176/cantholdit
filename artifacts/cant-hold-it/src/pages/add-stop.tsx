@@ -194,6 +194,7 @@ export default function AddStop() {
   const [locatingMe, setLocatingMe] = useState(false);
   const [locateError, setLocateError] = useState<string | null>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
 
   const createStop = useCreateStop({
     mutation: {
@@ -216,6 +217,17 @@ export default function AddStop() {
       lng: 0,
     },
   });
+
+  // Close suggestions on click outside the search container
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setSuggestions([]);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   // Debounced Nominatim search as user types
   useEffect(() => {
@@ -420,7 +432,7 @@ export default function AddStop() {
             Type a name like "Pilot Flying J" or "McDonald's I-80" to search
           </p>
 
-          <div className="relative">
+          <div className="relative" ref={searchContainerRef}>
             {selectedPlace ? (
               /* Confirmed location pill */
               <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-2xl px-4 py-3">
@@ -448,6 +460,12 @@ export default function AddStop() {
                   type="text"
                   value={locationQuery}
                   onChange={(e) => setLocationQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setSuggestions([]);
+                      (e.target as HTMLInputElement).blur();
+                    }
+                  }}
                   placeholder={`e.g. "Pilot", "Buc-ee's", "I-90 Rest Area"`}
                   className="flex-1 bg-transparent border-none outline-none text-sm placeholder:text-muted-foreground/60"
                 />
