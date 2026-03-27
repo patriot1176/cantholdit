@@ -131,8 +131,8 @@ export default function RateStop() {
             >
               <div>
                 <h3 className="font-display font-bold text-lg text-foreground">{cat.label}</h3>
-                <p className="text-xs text-muted-foreground">{cat.desc}</p>
-                <p className="text-[10px] text-muted-foreground/50 font-medium mt-0.5">1 = worst · 5 = best</p>
+                <p className="text-xs font-medium" style={{ color: "#475569" }}>{cat.desc}</p>
+                <p className="text-[10px] font-medium mt-0.5" style={{ color: "#475569" }}>1 = worst · 5 = best</p>
               </div>
               <Controller
                 name={cat.key}

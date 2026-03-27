@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import { Link } from "wouter";
-import { Navigation, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import type { Stop } from "@workspace/api-client-react";
 
 // Continental US bounds
@@ -56,6 +56,9 @@ const createMarkerIcon = (rating: number | null) => {
   });
 };
 
+const mapBtnClass =
+  "bg-white w-12 h-12 rounded-full shadow-lg shadow-black/10 border border-border flex items-center justify-center hover:bg-slate-50 active:scale-95 transition-all";
+
 export function MapView({
   stops,
   userLocation,
@@ -94,7 +97,7 @@ export function MapView({
       (pos) => {
         mapRef.current?.flyTo(
           [pos.coords.latitude, pos.coords.longitude],
-          14,
+          9,
           { duration: 1.5 }
         );
         setIsLocating(false);
@@ -169,7 +172,6 @@ export function MapView({
 
                 <Link href={`/stop/${stop.id}`}>
                   <button className="w-full py-2 bg-primary text-white rounded-xl font-bold shadow-md shadow-primary/20 hover:shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2">
-                    <Navigation className="w-4 h-4" />
                     View Details
                   </button>
                 </Link>
@@ -186,19 +188,40 @@ export function MapView({
         </div>
       )}
 
-      {/* Re-center button — always visible, bottom-right */}
-      <button
-        onClick={handleRecenter}
-        disabled={isLocating}
-        className="absolute bottom-6 right-4 z-[400] bg-white w-12 h-12 rounded-full shadow-lg shadow-black/10 border border-border flex items-center justify-center hover:bg-slate-50 active:scale-95 transition-all disabled:opacity-60"
-        aria-label="Re-center map"
-      >
-        {isLocating ? (
-          <Loader2 className="w-5 h-5 text-primary animate-spin" />
-        ) : (
-          <span className="text-xl leading-none">📍</span>
-        )}
-      </button>
+      {/* Right-side controls: + / − / 📍 stacked top-to-bottom */}
+      <div className="absolute bottom-6 right-4 z-[400] flex flex-col gap-2">
+        {/* Zoom in */}
+        <button
+          onClick={() => mapRef.current?.zoomIn(1)}
+          className={mapBtnClass}
+          aria-label="Zoom in"
+        >
+          <span className="text-xl font-bold text-slate-700 leading-none select-none">+</span>
+        </button>
+
+        {/* Zoom out */}
+        <button
+          onClick={() => mapRef.current?.zoomOut(1)}
+          className={mapBtnClass}
+          aria-label="Zoom out"
+        >
+          <span className="text-2xl font-bold text-slate-700 leading-none select-none">−</span>
+        </button>
+
+        {/* Re-center */}
+        <button
+          onClick={handleRecenter}
+          disabled={isLocating}
+          className={`${mapBtnClass} disabled:opacity-60`}
+          aria-label="Re-center map"
+        >
+          {isLocating ? (
+            <Loader2 className="w-5 h-5 text-primary animate-spin" />
+          ) : (
+            <span className="text-xl leading-none">📍</span>
+          )}
+        </button>
+      </div>
     </div>
   );
 }
