@@ -161,21 +161,31 @@ export default function AddStop() {
     },
   });
 
+  const [allResultsFar, setAllResultsFar] = useState(false);
+
   // Debounced Nominatim search as user types
   useEffect(() => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    // Don't search if a place is already confirmed (avoids re-triggering after GPS pin)
+    if (selectedPlace) return;
     if (!locationQuery.trim() || locationQuery.length < 3) {
       setSuggestions([]);
+      setAllResultsFar(false);
       return;
     }
     debounceTimer.current = setTimeout(async () => {
       setSearching(true);
       const results = await searchPlaces(locationQuery, gpsPosRef.current);
       setSuggestions(results);
+      // Flag when every returned result is more than 200 km away
+      setAllResultsFar(
+        results.length > 0 &&
+        results.every((r) => r.distKm != null && r.distKm > 200)
+      );
       setSearching(false);
     }, 400);
     return () => { if (debounceTimer.current) clearTimeout(debounceTimer.current); };
-  }, [locationQuery]);
+  }, [locationQuery, selectedPlace]);
 
   const pickPlace = useCallback((place: GeoSuggestion) => {
     setSelectedPlace(place);
@@ -439,6 +449,14 @@ export default function AddStop() {
               )}
             </AnimatePresence>
           </div>
+
+          {/* Hint when search only found faraway results */}
+          {allResultsFar && !selectedPlace && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-800 flex items-center gap-2">
+              <Navigation className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+              <span>No nearby matches found. If you're there right now, tap <strong>use my GPS</strong> above.</span>
+            </div>
+          )}
 
           {locationError && (
             <p className="text-red-500 text-xs">Please search and select a location above</p>
