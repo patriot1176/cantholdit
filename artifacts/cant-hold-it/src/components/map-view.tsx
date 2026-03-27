@@ -72,7 +72,7 @@ export function MapView({
   // Fly to geocoded search result when it changes
   useEffect(() => {
     if (searchCenter && mapRef.current) {
-      mapRef.current.flyTo([searchCenter.lat, searchCenter.lng], 9, {
+      mapRef.current.flyTo([searchCenter.lat, searchCenter.lng], 7, {
         duration: 1.2,
       });
     }
@@ -83,7 +83,7 @@ export function MapView({
   useEffect(() => {
     if (userLocation && mapRef.current && !hasFlewToUser.current && !searchCenter) {
       hasFlewToUser.current = true;
-      mapRef.current.flyTo([userLocation.lat, userLocation.lng], 9, {
+      mapRef.current.flyTo([userLocation.lat, userLocation.lng], 7, {
         duration: 1.5,
       });
     }

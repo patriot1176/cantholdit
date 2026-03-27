@@ -28,6 +28,24 @@ async function geocodeQuery(
   return null;
 }
 
+// Haversine formula — returns distance in km between two lat/lng points
+function haversineKm(
+  lat1: number, lng1: number,
+  lat2: number, lng2: number
+): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+const RADIUS_KM = 500;
+
 export default function Home() {
   const { location } = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
@@ -50,18 +68,22 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Use geocoded location for proximity, fall back to silent GPS, then nothing
-  const proximityLat = searchCenter?.lat ?? location?.lat;
-  const proximityLng = searchCenter?.lng ?? location?.lng;
-
-  const { data: stops, isLoading } = useGetStops(
-    {
-      lat: proximityLat,
-      lng: proximityLng,
-      query: searchQuery || undefined,
-    },
+  // Always fetch ALL stops — no text filter (search drives map pan, not stop filtering)
+  const { data: allStops, isLoading } = useGetStops(
+    {},
     { query: { keepPreviousData: true } }
   );
+
+  // Client-side proximity filter: within 500km of searchCenter, fall back to all
+  const stops = (() => {
+    if (!allStops) return undefined;
+    const center = searchCenter;
+    if (!center) return allStops;
+    const nearby = allStops.filter(
+      (s) => haversineKm(center.lat, center.lng, s.lat, s.lng) <= RADIUS_KM
+    );
+    return nearby.length > 0 ? nearby : allStops; // fall back to nationwide if none nearby
+  })();
 
   // Leaderboard data derived from stops
   const royalFlushStops = [...(stops || [])]
