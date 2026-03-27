@@ -208,6 +208,7 @@ export default function Home() {
               className="flex-1 bg-transparent border-none outline-none font-medium placeholder:text-muted-foreground text-sm min-w-0"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => { if (searchQuery === "Near me") setSearchQuery(""); }}
               onKeyDown={handleSearchKeyDown}
             />
             <button
