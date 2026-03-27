@@ -161,8 +161,6 @@ export default function AddStop() {
     },
   });
 
-  const [allResultsFar, setAllResultsFar] = useState(false);
-
   // Debounced Nominatim search as user types
   useEffect(() => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
@@ -170,18 +168,12 @@ export default function AddStop() {
     if (selectedPlace) return;
     if (!locationQuery.trim() || locationQuery.length < 3) {
       setSuggestions([]);
-      setAllResultsFar(false);
       return;
     }
     debounceTimer.current = setTimeout(async () => {
       setSearching(true);
       const results = await searchPlaces(locationQuery, gpsPosRef.current);
       setSuggestions(results);
-      // Flag when every returned result is more than 200 km away
-      setAllResultsFar(
-        results.length > 0 &&
-        results.every((r) => r.distKm != null && r.distKm > 200)
-      );
       setSearching(false);
     }, 400);
     return () => { if (debounceTimer.current) clearTimeout(debounceTimer.current); };
@@ -416,14 +408,14 @@ export default function AddStop() {
                   className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl border border-border overflow-hidden z-50"
                 >
                   {suggestions.map((s, i) => {
-                    const dist = s.distKm;
+                    const dist = s.distKm == null ? null : s.distKm * 0.621371;
                     const distLabel = dist == null ? null
-                      : dist < 1 ? "< 1 km"
-                      : dist < 10 ? `${dist.toFixed(1)} km`
-                      : `${Math.round(dist)} km`;
+                      : dist < 1 ? "< 1 mi"
+                      : dist < 10 ? `${dist.toFixed(1)} mi`
+                      : `${Math.round(dist)} mi`;
                     const distColor = dist == null ? ""
-                      : dist < 80 ? "text-green-600"
-                      : dist < 300 ? "text-amber-500"
+                      : dist < 50 ? "text-green-600"
+                      : dist < 186 ? "text-amber-500"
                       : "text-red-500";
                     return (
                       <button
@@ -449,14 +441,6 @@ export default function AddStop() {
               )}
             </AnimatePresence>
           </div>
-
-          {/* Hint when search only found faraway results */}
-          {allResultsFar && !selectedPlace && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-800 flex items-center gap-2">
-              <Navigation className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-              <span>No nearby matches found. If you're there right now, tap <strong>use my GPS</strong> above.</span>
-            </div>
-          )}
 
           {locationError && (
             <p className="text-red-500 text-xs">Please search and select a location above</p>
