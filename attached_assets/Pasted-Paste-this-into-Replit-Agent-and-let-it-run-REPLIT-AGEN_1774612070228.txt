@@ -1,0 +1,75 @@
+Paste this into Replit Agent and let it run:
+
+---
+
+**REPLIT AGENT PROMPT — Can't Hold It — Supabase Database**
+
+Connect the app to a real Supabase database using these credentials:
+
+- **Supabase URL:** `https://xjpgtneuvlqytfltmava.supabase.co`
+- **Supabase anon key:** `sb_publishable_TnJowm3jH2hTC4oFsv9Q1g_3hhH6NSt`
+
+Do the following:
+
+**1. Install Supabase client:**
+```
+npm install @supabase/supabase-js
+```
+
+**2. Create these two tables in Supabase using the SQL editor:**
+
+```sql
+create table stops (
+  id uuid default gen_random_uuid() primary key,
+  name text not null,
+  address text,
+  type text,
+  latitude float8,
+  longitude float8,
+  hours text,
+  created_at timestamptz default now()
+);
+
+create table reviews (
+  id uuid default gen_random_uuid() primary key,
+  stop_id uuid references stops(id),
+  cleanliness int2,
+  odor int2,
+  tp_supply int2,
+  lighting int2,
+  safety int2,
+  family_friendly int2,
+  overall float4,
+  comment text,
+  created_at timestamptz default now()
+);
+```
+
+**3. Enable public access on both tables:**
+```sql
+alter table stops enable row level security;
+alter table reviews enable row level security;
+
+create policy "Public stops are viewable by everyone" on stops for select using (true);
+create policy "Anyone can insert stops" on stops for insert with check (true);
+create policy "Public reviews are viewable by everyone" on reviews for select using (true);
+create policy "Anyone can insert reviews" on reviews for insert with check (true);
+```
+
+**4. Replace ALL local storage with Supabase calls:**
+- Load all stops from Supabase when map opens
+- Load reviews for a stop from Supabase when detail screen opens
+- Save new stops to Supabase when Add a Stop submits
+- Save new reviews to Supabase when Rate your throne submits
+- Recalculate stop average rating after each new review saves
+- Calculate overall rating as average of all 6 categories before saving
+
+**5. Migrate seed data** — insert all existing hardcoded stops and sample reviews into Supabase so map isn't empty on first load
+
+**6. Add a simple loading spinner** while fetching from database so user knows data is loading
+
+**7. Keep all existing UI exactly the same** — logo, colors, copy, rating form, leaderboard, everything stays identical. Only the data layer changes.
+
+**8. Handle errors gracefully** — if Supabase is unreachable show a friendly message instead of crashing
+
+Screenshot the map loading live from Supabase when done! 🚽👑
