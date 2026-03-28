@@ -528,10 +528,10 @@ export default function Home() {
 
         {/* Filter chips — shown in list + map views */}
         {viewMode !== "top" && (
-          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
+          <div className="flex gap-1 overflow-x-auto no-scrollbar pb-0.5">
             {[
-              { value: "all", label: "All Types" },
-              { value: "rest_area", label: "🛣️ Rest Area" },
+              { value: "all", label: "All" },
+              { value: "rest_area", label: "🛣️ Rest" },
               { value: "gas_station", label: "⛽ Gas" },
               { value: "truck_stop", label: "🚛 Truck" },
               { value: "fast_food", label: "🍔 Food" },
@@ -540,7 +540,7 @@ export default function Home() {
               <button
                 key={chip.value}
                 onClick={() => setFilterType(chip.value)}
-                className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                className={`shrink-0 px-2 py-1.5 rounded-full text-xs font-bold transition-all ${
                   filterType === chip.value
                     ? "bg-primary text-white shadow-sm"
                     : "bg-white/90 backdrop-blur-sm text-slate-600 border border-white/50 shadow-sm"
