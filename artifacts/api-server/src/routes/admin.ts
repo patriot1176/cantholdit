@@ -817,4 +817,104 @@ router.post("/admin/replace-bucees", async (req, res): Promise<void> => {
   }
 });
 
+/**
+ * POST /api/admin/seed-gasstations?key=<ADMIN_SEED_KEY>
+ *
+ * Seeds major road-trip gas station chains: Wawa, Sheetz, QuikTrip, Kwik Trip,
+ * Casey's, RaceTrac, Speedway, Maverik, Holiday, Kum & Go, 7-Eleven, Circle K.
+ * Skips generic oil brands (Shell/BP/Exxon) — too variable and too numerous.
+ * Deduplicates by proximity (0.003 deg ≈ 330m).
+ */
+router.post("/admin/seed-gasstations", async (req, res): Promise<void> => {
+  if (req.query.key !== ADMIN_KEY) {
+    res.status(401).json({ error: "Invalid key" });
+    return;
+  }
+
+  const GAS_CHAINS = [
+    "Wawa",
+    "Sheetz",
+    "QuikTrip",
+    "Kwik Trip",
+    "Kwik Star",
+    "Casey's General Store",
+    "Casey's",
+    "RaceTrac",
+    "Speedway",
+    "Maverik",
+    "Holiday Stationstores",
+    "Holiday",
+    "Kum & Go",
+    "7-Eleven",
+    "Circle K",
+  ];
+
+  // Regex alternation — escape apostrophes for Overpass
+  const brandRegex = GAS_CHAINS.map((c) => c.replace(/'/g, "\\'")).join("|");
+
+  const REGIONS = [
+    { name: "Northeast",   bbox: "37,-80,47,-67" },
+    { name: "Southeast",   bbox: "25,-88,37,-79" },
+    { name: "Appalachian", bbox: "34,-90,37,-81" },
+    { name: "Midwest",     bbox: "37,-97,47,-82" },
+    { name: "Texas+Gulf",  bbox: "25,-107,37,-94" },
+    { name: "Plains",      bbox: "37,-105,47,-95" },
+    { name: "Mountain",    bbox: "37,-117,47,-103" },
+    { name: "Southwest",   bbox: "31,-114,37,-103" },
+    { name: "Pacific",     bbox: "32,-125,49,-117" },
+  ];
+
+  const results: Record<string, { inserted: number; skipped: number; error?: string }> = {};
+  let totalInserted = 0;
+
+  for (const region of REGIONS) {
+    try {
+      const query = `[out:json][timeout:30];(node["amenity"="fuel"]["brand"~"${brandRegex}"](${region.bbox});way["amenity"="fuel"]["brand"~"${brandRegex}"](${region.bbox}););out center;`;
+      const resp = await fetch(OVERPASS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "data=" + encodeURIComponent(query),
+      });
+      if (!resp.ok) throw new Error(`Overpass ${resp.status}`);
+      const data = await resp.json();
+      const els: any[] = data.elements || [];
+
+      let inserted = 0, skipped = 0;
+      for (const el of els) {
+        const lat = el.lat ?? el.center?.lat;
+        const lng = el.lon ?? el.center?.lon;
+        const tags = el.tags || {};
+        const name = (tags.brand || tags.name || "").trim();
+        if (!name || !lat || !lng || lat < 24 || lat > 50 || lng < -126 || lng > -65) { skipped++; continue; }
+
+        const nearby = await db.execute(sql`SELECT id FROM stops WHERE ABS(lat - ${lat}) < 0.003 AND ABS(lng - ${lng}) < 0.003 LIMIT 1`);
+        if (nearby.rows.length > 0) { skipped++; continue; }
+
+        const city = tags["addr:city"] || "";
+        const state = tags["addr:state"] || "";
+        const street = tags["addr:housenumber"]
+          ? `${tags["addr:housenumber"]} ${tags["addr:street"] || ""}`.trim()
+          : (tags["addr:street"] || "");
+        const address = [street, city, state].filter(Boolean).join(", ") || name;
+
+        await db.execute(sql`INSERT INTO stops (name, address, type, lat, lng, hours, highway, amenities) VALUES (${name}, ${address}, 'gas_station', ${lat}, ${lng}, ${tags.opening_hours || null}, null, ${JSON.stringify(["restrooms", "gas", "convenience"])})`);
+        inserted++;
+      }
+      results[region.name] = { inserted, skipped };
+      totalInserted += inserted;
+    } catch (err: any) {
+      results[region.name] = { inserted: 0, skipped: 0, error: err.message };
+    }
+    await new Promise((r) => setTimeout(r, 1200));
+  }
+
+  const total = await db.execute(sql`SELECT count(*) FROM stops`);
+  res.json({
+    message: "Gas station seed complete",
+    totalInserted,
+    totalStops: Number((total.rows[0] as any).count),
+    regions: results,
+  });
+});
+
 export default router;
