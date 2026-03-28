@@ -7,6 +7,7 @@ export const stopTypeEnum = pgEnum("stop_type", [
   "gas_station",
   "fast_food",
   "truck_stop",
+  "walmart",
   "other",
 ]);
 

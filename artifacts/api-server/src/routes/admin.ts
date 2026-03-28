@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { STATIC_STOPS } from "../data/static-stops";
 
@@ -384,7 +384,7 @@ router.post("/admin/seed-walmart", async (req, res): Promise<void> => {
         const street = tags["addr:street"] || "";
         const address = [street, city, state].filter(Boolean).join(", ") || "Walmart";
 
-        await db.execute(sql`INSERT INTO stops (name, address, type, lat, lng, hours, highway, amenities) VALUES (${name}, ${address}, 'gas_station', ${lat}, ${lng}, null, null, ${JSON.stringify(["restrooms", "accessible", "parking", "vending"])})`);
+        await db.execute(sql`INSERT INTO stops (name, address, type, lat, lng, hours, highway, amenities) VALUES (${name}, ${address}, 'walmart', ${lat}, ${lng}, null, null, ${JSON.stringify(["restrooms", "accessible", "parking", "vending"])})`);
         inserted++;
       }
       results[region.name] = { inserted, skipped };
@@ -490,7 +490,22 @@ router.post("/admin/fix-stop-types", async (req, res): Promise<void> => {
     res.status(401).json({ error: "Invalid key" });
     return;
   }
-  const fixes = await db.execute(sql`
+  // 1. Fix Walmart stops → walmart type
+  const walmartFix = await db.execute(sql`
+    UPDATE stops SET type = 'walmart'
+    WHERE name ILIKE '%walmart%'
+      AND type IN ('gas_station', 'other', 'truck_stop')
+  `);
+
+  // 2. Fix Buc-ee's → gas_station (large travel center, NOT a truck stop)
+  const buceeFix = await db.execute(sql`
+    UPDATE stops SET type = 'gas_station'
+    WHERE (name ILIKE 'Buc-ee%' OR name ILIKE 'Bucee%')
+      AND type IN ('truck_stop', 'other')
+  `);
+
+  // 3. Fix major truck stop chains → truck_stop
+  const truckFix = await db.execute(sql`
     UPDATE stops SET type = 'truck_stop'
     WHERE type IN ('gas_station', 'other')
       AND (
@@ -501,15 +516,66 @@ router.post("/admin/fix-stop-types", async (req, res): Promise<void> => {
         OR name ILIKE 'TA Travel%'
         OR name ILIKE 'Petro %'
         OR name ILIKE 'Pilot Travel%'
-        OR name ILIKE 'Buc-ee%'
       )
   `);
+
   const total = await db.execute(sql`SELECT type, count(*) as cnt FROM stops GROUP BY type ORDER BY cnt DESC`);
   res.json({
     message: "Type fix complete",
-    updated: Number((fixes as any).rowCount ?? 0),
+    walmartFixed: Number((walmartFix as any).rowCount ?? 0),
+    buceeFixed: Number((buceeFix as any).rowCount ?? 0),
+    truckFixed: Number((truckFix as any).rowCount ?? 0),
     breakdown: (total.rows as any[]).map((r) => ({ type: r.type, count: Number(r.cnt) })),
   });
+});
+
+/**
+ * POST /api/admin/migrate-enum?key=<ADMIN_SEED_KEY>
+ *
+ * Adds the 'walmart' value to the stop_type enum (if not present) and then
+ * re-types Walmart stops + fixes Buc-ee's. Safe to re-run.
+ */
+router.post("/admin/migrate-enum", async (req, res): Promise<void> => {
+  if (req.query.key !== ADMIN_KEY) {
+    res.status(401).json({ error: "Invalid key" });
+    return;
+  }
+  const client = await pool.connect();
+  try {
+    // ALTER TYPE ADD VALUE cannot run inside a transaction — use raw client
+    await client.query("ALTER TYPE stop_type ADD VALUE IF NOT EXISTS 'walmart'");
+    await client.query("ALTER TYPE stop_type ADD VALUE IF NOT EXISTS 'other'");
+
+    // Fix Walmart stops
+    const walmartRes = await client.query(
+      "UPDATE stops SET type='walmart' WHERE name ILIKE '%walmart%' AND type IN ('gas_station','other','truck_stop')"
+    );
+    // Fix Buc-ee's → gas_station
+    const buceeRes = await client.query(
+      "UPDATE stops SET type='gas_station' WHERE (name ILIKE 'Buc-ee%' OR name ILIKE 'Bucee%') AND type IN ('truck_stop','other')"
+    );
+    // Fix real truck stops
+    const truckRes = await client.query(
+      `UPDATE stops SET type='truck_stop' WHERE type IN ('gas_station','other') AND (
+        name ILIKE 'Love%' OR name ILIKE 'Pilot%' OR name ILIKE 'Flying J%' OR
+        name ILIKE 'TravelCenters%' OR name ILIKE 'TA Travel%' OR name ILIKE 'Petro %'
+      )`
+    );
+
+    const breakdownRes = await client.query(
+      "SELECT type, count(*) as cnt FROM stops GROUP BY type ORDER BY cnt DESC"
+    );
+
+    res.json({
+      message: "Enum migration complete",
+      walmartFixed: walmartRes.rowCount,
+      buceeFixed: buceeRes.rowCount,
+      truckFixed: truckRes.rowCount,
+      breakdown: breakdownRes.rows.map((r: any) => ({ type: r.type, count: Number(r.cnt) })),
+    });
+  } finally {
+    client.release();
+  }
 });
 
 export default router;

@@ -535,6 +535,7 @@ export default function Home() {
               { value: "gas_station", label: "⛽ Gas" },
               { value: "truck_stop", label: "🚛 Truck" },
               { value: "fast_food", label: "🍔 Food" },
+              { value: "walmart", label: "🛒 Walmart" },
             ].map((chip) => (
               <button
                 key={chip.value}

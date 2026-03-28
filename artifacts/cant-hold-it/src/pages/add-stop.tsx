@@ -16,6 +16,7 @@ const stopTypes = [
   { value: "gas_station", label: "⛽ Gas Station", desc: "Fuel stop with bathrooms" },
   { value: "fast_food", label: "🍔 Fast Food", desc: "Restaurant bathroom" },
   { value: "truck_stop", label: "🚛 Truck Stop", desc: "Full service truck plaza" },
+  { value: "walmart", label: "🛒 Walmart", desc: "Walmart with restrooms & parking" },
   { value: "other", label: "🏪 Other", desc: "Park, store, or anywhere else" },
 ] as const;
 
@@ -149,7 +150,7 @@ async function searchPlaces(
 const addStopSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   address: z.string().min(1),
-  type: z.enum(["rest_area", "gas_station", "fast_food", "truck_stop", "other"]),
+  type: z.enum(["rest_area", "gas_station", "fast_food", "truck_stop", "walmart", "other"]),
   hours: z.string().optional().nullable(),
   highway: z.string().optional().nullable(),
   lat: z.number(),

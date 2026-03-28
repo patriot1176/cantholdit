@@ -21,6 +21,7 @@ function getStopEmoji(type: string): string {
     case "gas_station": return "⛽";
     case "truck_stop":  return "🚛";
     case "fast_food":   return "🍔";
+    case "walmart":     return "🛒";
     default:            return "🚽";
   }
 }

@@ -13,5 +13,6 @@ export const StopType = {
   gas_station: "gas_station",
   fast_food: "fast_food",
   truck_stop: "truck_stop",
+  walmart: "walmart",
   other: "other",
 } as const;
