@@ -15,7 +15,17 @@ const US_BOUNDS = L.latLngBounds(
 const US_CENTER: [number, number] = [39.5, -98.35];
 const US_ZOOM = 4;
 
-const createMarkerIcon = (rating: number | null) => {
+function getStopEmoji(type: string): string {
+  switch (type) {
+    case "rest_area":   return "🛣️";
+    case "gas_station": return "⛽";
+    case "truck_stop":  return "🚛";
+    case "fast_food":   return "🍔";
+    default:            return "🚽";
+  }
+}
+
+const createMarkerIcon = (rating: number | null, type: string) => {
   let color = "#94a3b8";
   let shadowColor = "rgba(148,163,184,0.4)";
 
@@ -31,6 +41,8 @@ const createMarkerIcon = (rating: number | null) => {
       shadowColor = "rgba(239,68,68,0.4)";
     }
   }
+
+  const emoji = getStopEmoji(type);
 
   return L.divIcon({
     className: "custom-marker",
@@ -48,7 +60,7 @@ const createMarkerIcon = (rating: number | null) => {
         font-size: 16px;
         cursor: pointer;
       ">
-        🚽
+        ${emoji}
       </div>
     `,
     iconSize: [36, 36],
@@ -80,8 +92,9 @@ function ClusterLayer({ stops, onNavigate }: { stops: Stop[]; onNavigate: (id: n
     });
 
     stops.forEach((stop) => {
+      const stopEmoji = getStopEmoji(stop.type);
       const marker = L.marker([stop.lat, stop.lng], {
-        icon: createMarkerIcon(stop.overallRating),
+        icon: createMarkerIcon(stop.overallRating, stop.type),
       });
 
       const el = L.DomUtil.create("div");
@@ -90,7 +103,7 @@ function ClusterLayer({ stops, onNavigate }: { stops: Stop[]; onNavigate: (id: n
         <div style="font-weight:700;font-size:15px;line-height:1.2;margin-bottom:2px">${stop.name}</div>
         <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">${stop.type.replace("_", " ")}</div>
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
-          <span style="font-size:18px">🚽</span>
+          <span style="font-size:18px">${stopEmoji}</span>
           <span style="font-weight:700;font-size:16px">${stop.overallRating ? stop.overallRating.toFixed(1) : "—"}</span>
           <span style="font-size:12px;color:#64748b">(${stop.totalRatings} ratings)</span>
         </div>
