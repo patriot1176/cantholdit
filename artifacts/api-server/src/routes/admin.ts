@@ -273,4 +273,59 @@ router.post("/admin/cleanup-placeholders", async (req, res): Promise<void> => {
   }
 });
 
+/**
+ * POST /api/admin/seed-batch?key=<ADMIN_SEED_KEY>
+ *
+ * Accepts a JSON body: { stops: Array<{name,address,type,lat,lng,highway?,amenities?}> }
+ * Deduplicates against existing stops within ~500 m and bulk-inserts new ones.
+ * Safe to re-run — already-present stops are silently skipped.
+ */
+router.post("/admin/seed-batch", async (req, res): Promise<void> => {
+  if (req.query.key !== ADMIN_KEY) {
+    res.status(401).json({ error: "Invalid key" });
+    return;
+  }
+
+  const incoming = req.body?.stops;
+  if (!Array.isArray(incoming) || incoming.length === 0) {
+    res.status(400).json({ error: "Body must be { stops: [...] }" });
+    return;
+  }
+
+  let inserted = 0;
+  let skipped = 0;
+
+  for (const s of incoming) {
+    const { name, address, type, lat, lng, highway, amenities } = s;
+
+    if (!name || typeof lat !== "number" || typeof lng !== "number") { skipped++; continue; }
+    if (lat < 24 || lat > 50 || lng < -126 || lng > -65) { skipped++; continue; }
+
+    const nearby = await db.execute(sql`
+      SELECT id FROM stops
+      WHERE ABS(lat - ${lat}) < 0.005
+        AND ABS(lng - ${lng}) < 0.005
+      LIMIT 1
+    `);
+    if (nearby.rows.length > 0) { skipped++; continue; }
+
+    const amenitiesJson = amenities ? (typeof amenities === "string" ? amenities : JSON.stringify(amenities)) : null;
+
+    await db.execute(sql`
+      INSERT INTO stops (name, address, type, lat, lng, hours, highway, amenities)
+      VALUES (${name}, ${address ?? "US Highway Rest Area"}, ${type ?? "rest_area"}, ${lat}, ${lng}, null, ${highway ?? null}, ${amenitiesJson})
+    `);
+    inserted++;
+  }
+
+  const total = await db.execute(sql`SELECT count(*) FROM stops`);
+  res.json({
+    message: "Batch seed complete",
+    received: incoming.length,
+    inserted,
+    skipped,
+    totalStops: Number((total.rows[0] as any).count),
+  });
+});
+
 export default router;
