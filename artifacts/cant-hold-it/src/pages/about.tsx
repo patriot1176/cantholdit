@@ -69,10 +69,10 @@ const fadeUp = {
 
 export default function About() {
   return (
-    <div className="min-h-[100dvh] bg-gradient-to-b from-slate-50 to-white flex flex-col max-w-md mx-auto sm:border-x sm:border-border/50 shadow-2xl shadow-black/5">
+    <div className="h-[100dvh] bg-gradient-to-b from-slate-50 to-white flex flex-col max-w-md mx-auto sm:border-x sm:border-border/50 shadow-2xl shadow-black/5">
 
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-border/50 px-4 py-2.5 flex items-center justify-between">
+      <header className="shrink-0 z-50 bg-white/80 backdrop-blur-xl border-b border-border/50 px-4 py-2.5 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5 group outline-none">
           <img
             src={`${import.meta.env.BASE_URL}logo.png`}
@@ -98,7 +98,10 @@ export default function About() {
         </Link>
       </header>
 
-      <main className="flex-1 flex flex-col">
+      <main
+        className="flex-1 flex flex-col overflow-y-auto"
+        style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+      >
 
         {/* Hero */}
         <section className="relative overflow-hidden px-6 pt-12 pb-10 text-center bg-gradient-to-b from-primary/5 to-transparent">
