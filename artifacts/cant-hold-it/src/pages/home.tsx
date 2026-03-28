@@ -249,6 +249,9 @@ export default function Home() {
   const [routeToSuggestions, setRouteToSuggestions] = useState<GeoResult[]>([]);
   const routeFromTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const routeToTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const routeFromSkipRef = useRef(false); // true = value was set by selecting a suggestion; skip re-fetch
+  const routeToSkipRef = useRef(false);
+  const routeBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const findStopsAlongRoute = useCallback(async () => {
     if (!routeFrom.trim() || !routeTo.trim()) {
@@ -286,9 +289,10 @@ export default function Home() {
     }
   }, [routeFrom, routeTo, allStops]);
 
-  // Debounced city suggestions for route "from" input
+  // Debounced city suggestions for route "from" input — skip when value was set by selecting a suggestion
   useEffect(() => {
     if (routeFromTimer.current) clearTimeout(routeFromTimer.current);
+    if (routeFromSkipRef.current) { routeFromSkipRef.current = false; return; }
     if (!routeFrom.trim() || routeFrom.length < 3) { setRouteFromSuggestions([]); return; }
     routeFromTimer.current = setTimeout(async () => {
       const results = await geocodeSuggest(routeFrom);
@@ -297,9 +301,10 @@ export default function Home() {
     return () => { if (routeFromTimer.current) clearTimeout(routeFromTimer.current); };
   }, [routeFrom]);
 
-  // Debounced city suggestions for route "to" input
+  // Debounced city suggestions for route "to" input — skip when value was set by selecting a suggestion
   useEffect(() => {
     if (routeToTimer.current) clearTimeout(routeToTimer.current);
+    if (routeToSkipRef.current) { routeToSkipRef.current = false; return; }
     if (!routeTo.trim() || routeTo.length < 3) { setRouteToSuggestions([]); return; }
     routeToTimer.current = setTimeout(async () => {
       const results = await geocodeSuggest(routeTo);
@@ -802,18 +807,21 @@ export default function Home() {
               {/* Route inputs */}
               <div className="bg-white rounded-3xl p-4 shadow-sm border border-border flex flex-col gap-3">
                 {/* From */}
-                <div className="relative">
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 rounded-full bg-green-500 shrink-0 border-2 border-white shadow" />
-                    <div className="flex-1 flex items-center gap-1 bg-slate-50 rounded-xl border border-border focus-within:ring-2 focus-within:ring-primary/40 pr-1">
+                <div className="flex items-center gap-3">
+                  <div className="w-3 h-3 rounded-full bg-green-500 shrink-0 border-2 border-white shadow" />
+                  <div className="flex-1 flex flex-col gap-0">
+                    <div className="flex items-center bg-slate-50 rounded-xl border border-border focus-within:ring-2 focus-within:ring-primary/40 pr-1">
                       <input
-                        type="text"
-                        autoComplete="new-password"
+                        type="search"
+                        autoComplete="off"
+                        name="route-from-x9q"
                         placeholder="Start city (e.g. Nashville, TN)"
                         value={routeFrom}
-                        onChange={(e) => { setRouteFrom(e.target.value); setRouteFromSuggestions([]); }}
-                        onKeyDown={(e) => { if (e.key === "Enter") findStopsAlongRoute(); if (e.key === "Escape") setRouteFromSuggestions([]); }}
-                        className="flex-1 bg-transparent px-3 py-2.5 text-sm font-medium focus:outline-none"
+                        onChange={(e) => setRouteFrom(e.target.value)}
+                        onFocus={() => setRouteToSuggestions([])}
+                        onBlur={() => { routeBlurTimer.current = setTimeout(() => setRouteFromSuggestions([]), 150); }}
+                        onKeyDown={(e) => { if (e.key === "Enter") { setRouteFromSuggestions([]); findStopsAlongRoute(); } if (e.key === "Escape") setRouteFromSuggestions([]); }}
+                        className="flex-1 bg-transparent px-3 py-2.5 text-sm font-medium focus:outline-none [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden"
                       />
                       <button
                         type="button"
@@ -822,12 +830,14 @@ export default function Home() {
                           if (!("geolocation" in navigator)) return;
                           navigator.geolocation.getCurrentPosition(async (pos) => {
                             const { latitude: lat, longitude: lng } = pos.coords;
+                            routeFromSkipRef.current = true;
                             try {
                               const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, { headers: { "Accept-Language": "en" } });
                               const d = await res.json();
                               const parts = (d.display_name as string).split(",").map((s: string) => s.trim());
                               setRouteFrom(parts.slice(0, 2).join(", "));
                             } catch { setRouteFrom(`${lat.toFixed(4)}, ${lng.toFixed(4)}`); }
+                            setRouteFromSuggestions([]);
                           }, () => {});
                         }}
                         className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-primary/10 transition-colors"
@@ -835,45 +845,64 @@ export default function Home() {
                         <LocateFixed className="w-3.5 h-3.5" />
                       </button>
                     </div>
+                    {routeFromSuggestions.length > 0 && (
+                      <div className="mt-1 bg-white rounded-2xl shadow-xl border border-border overflow-hidden z-20">
+                        {routeFromSuggestions.slice(0, 4).map((s, i) => (
+                          <button key={i} type="button"
+                            className="w-full text-left px-4 py-2.5 text-sm font-medium text-foreground hover:bg-primary/5 border-t border-border/40 first:border-0 transition-colors flex items-center gap-2"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              clearTimeout(routeBlurTimer.current!);
+                              routeFromSkipRef.current = true;
+                              setRouteFrom(s.label);
+                              setRouteFromSuggestions([]);
+                            }}>
+                            <MapPin className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  {routeFromSuggestions.length > 0 && (
-                    <div className="absolute left-6 right-0 top-full mt-1 z-20 bg-white rounded-2xl shadow-xl border border-border overflow-hidden">
-                      {routeFromSuggestions.slice(0, 4).map((s, i) => (
-                        <button key={i} type="button" className="w-full text-left px-4 py-2.5 text-sm font-medium text-foreground hover:bg-primary/5 border-t border-border/40 first:border-0 transition-colors"
-                          onClick={() => { setRouteFrom(s.label); setRouteFromSuggestions([]); }}>
-                          {s.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
                 </div>
 
                 <div className="w-0.5 h-4 bg-slate-200 ml-[5px]" />
 
                 {/* To */}
-                <div className="relative">
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 rounded-full bg-red-500 shrink-0 border-2 border-white shadow" />
+                <div className="flex items-center gap-3">
+                  <div className="w-3 h-3 rounded-full bg-red-500 shrink-0 border-2 border-white shadow" />
+                  <div className="flex-1 flex flex-col gap-0">
                     <input
-                      type="text"
-                      autoComplete="new-password"
+                      type="search"
+                      autoComplete="off"
+                      name="route-to-x9q"
                       placeholder="End city (e.g. Atlanta, GA)"
                       value={routeTo}
-                      onChange={(e) => { setRouteTo(e.target.value); setRouteToSuggestions([]); }}
-                      onKeyDown={(e) => { if (e.key === "Enter") findStopsAlongRoute(); if (e.key === "Escape") setRouteToSuggestions([]); }}
-                      className="flex-1 bg-slate-50 rounded-xl px-3 py-2.5 text-sm font-medium border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      onChange={(e) => setRouteTo(e.target.value)}
+                      onFocus={() => setRouteFromSuggestions([])}
+                      onBlur={() => { routeBlurTimer.current = setTimeout(() => setRouteToSuggestions([]), 150); }}
+                      onKeyDown={(e) => { if (e.key === "Enter") { setRouteToSuggestions([]); findStopsAlongRoute(); } if (e.key === "Escape") setRouteToSuggestions([]); }}
+                      className="w-full bg-slate-50 rounded-xl px-3 py-2.5 text-sm font-medium border border-border focus:outline-none focus:ring-2 focus:ring-primary/40 [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden"
                     />
+                    {routeToSuggestions.length > 0 && (
+                      <div className="mt-1 bg-white rounded-2xl shadow-xl border border-border overflow-hidden z-20">
+                        {routeToSuggestions.slice(0, 4).map((s, i) => (
+                          <button key={i} type="button"
+                            className="w-full text-left px-4 py-2.5 text-sm font-medium text-foreground hover:bg-primary/5 border-t border-border/40 first:border-0 transition-colors flex items-center gap-2"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              clearTimeout(routeBlurTimer.current!);
+                              routeToSkipRef.current = true;
+                              setRouteTo(s.label);
+                              setRouteToSuggestions([]);
+                            }}>
+                            <MapPin className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  {routeToSuggestions.length > 0 && (
-                    <div className="absolute left-6 right-0 top-full mt-1 z-20 bg-white rounded-2xl shadow-xl border border-border overflow-hidden">
-                      {routeToSuggestions.slice(0, 4).map((s, i) => (
-                        <button key={i} type="button" className="w-full text-left px-4 py-2.5 text-sm font-medium text-foreground hover:bg-primary/5 border-t border-border/40 first:border-0 transition-colors"
-                          onClick={() => { setRouteTo(s.label); setRouteToSuggestions([]); }}>
-                          {s.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
                 </div>
 
                 <motion.button
