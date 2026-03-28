@@ -15,7 +15,8 @@ const US_BOUNDS = L.latLngBounds(
 const US_CENTER: [number, number] = [39.5, -98.35];
 const US_ZOOM = 4;
 
-function getStopEmoji(type: string): string {
+function getStopEmoji(type: string, name?: string): string {
+  if (name && /buc-ee|bucee/i.test(name)) return "🦫";
   switch (type) {
     case "rest_area":   return "🛣️";
     case "gas_station": return "⛽";
@@ -26,7 +27,7 @@ function getStopEmoji(type: string): string {
   }
 }
 
-const createMarkerIcon = (rating: number | null, type: string) => {
+const createMarkerIcon = (rating: number | null, type: string, name?: string) => {
   let color = "#94a3b8";
   let shadowColor = "rgba(148,163,184,0.4)";
 
@@ -43,7 +44,7 @@ const createMarkerIcon = (rating: number | null, type: string) => {
     }
   }
 
-  const emoji = getStopEmoji(type);
+  const emoji = getStopEmoji(type, name);
 
   return L.divIcon({
     className: "custom-marker",
@@ -93,9 +94,9 @@ function ClusterLayer({ stops, onNavigate }: { stops: Stop[]; onNavigate: (id: n
     });
 
     stops.forEach((stop) => {
-      const stopEmoji = getStopEmoji(stop.type);
+      const stopEmoji = getStopEmoji(stop.type, stop.name);
       const marker = L.marker([stop.lat, stop.lng], {
-        icon: createMarkerIcon(stop.overallRating, stop.type),
+        icon: createMarkerIcon(stop.overallRating, stop.type, stop.name),
       });
 
       const el = L.DomUtil.create("div");
