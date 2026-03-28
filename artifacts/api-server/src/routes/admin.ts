@@ -1078,6 +1078,28 @@ router.post("/admin/seed-gasstations-pacific", async (req, res): Promise<void> =
  * Body: { stops: Array<{ name, address, type, lat, lng, hours?, amenities? }> }
  * Inserts stops directly, deduplicating by proximity. Used when Overpass is rate-limited.
  */
+router.delete("/admin/ratings/:id", async (req, res): Promise<void> => {
+  if (req.query.key !== ADMIN_KEY) { res.status(401).json({ error: "Invalid key" }); return; }
+  const id = parseInt(req.params.id, 10);
+  if (!id || isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const result = await db.execute(sql`DELETE FROM ratings WHERE id = ${id}`);
+  const deleted = Number((result as any).rowCount ?? 0);
+  if (deleted === 0) { res.status(404).json({ error: "Rating not found" }); return; }
+  res.json({ deleted, id });
+});
+
+router.delete("/admin/stops/:id", async (req, res): Promise<void> => {
+  if (req.query.key !== ADMIN_KEY) { res.status(401).json({ error: "Invalid key" }); return; }
+  const id = parseInt(req.params.id, 10);
+  if (!id || isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  await db.execute(sql`DELETE FROM ratings WHERE stop_id = ${id}`);
+  await db.execute(sql`DELETE FROM reports WHERE stop_id = ${id}`);
+  const result = await db.execute(sql`DELETE FROM stops WHERE id = ${id}`);
+  const deleted = Number((result as any).rowCount ?? 0);
+  if (deleted === 0) { res.status(404).json({ error: "Stop not found" }); return; }
+  res.json({ deleted, id });
+});
+
 router.post("/admin/bulk-insert-stops", async (req, res): Promise<void> => {
   if (req.query.key !== ADMIN_KEY) { res.status(401).json({ error: "Invalid key" }); return; }
   const stops: any[] = req.body?.stops || [];
