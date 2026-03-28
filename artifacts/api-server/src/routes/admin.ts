@@ -684,4 +684,43 @@ router.post("/admin/seed-ohio", async (req, res): Promise<void> => {
   });
 });
 
+/**
+ * POST /api/admin/fix-bucees-ky?key=<ADMIN_SEED_KEY>
+ *
+ * Corrects the erroneous "Winchester, KY" Buc-ee's entry (ID 4) to the
+ * real Richmond, KY location (I-75 exit 87), and verifies Florence, KY is correct.
+ */
+router.post("/admin/fix-bucees-ky", async (req, res): Promise<void> => {
+  if (req.query.key !== ADMIN_KEY) {
+    res.status(401).json({ error: "Invalid key" });
+    return;
+  }
+  try {
+    // Update Winchester → Richmond, KY (I-75 exit 87)
+    const fix = await db.execute(sql`
+      UPDATE stops
+      SET name    = 'Buc-ee''s Richmond',
+          address = '107 Buc-ee''s Blvd, Richmond, KY 40475',
+          lat     = 37.748,
+          lng     = -84.296
+      WHERE id = 4
+      RETURNING id, name, address, lat, lng
+    `);
+
+    const allBucees = await db.execute(sql`
+      SELECT id, name, address, lat, lng FROM stops
+      WHERE name ILIKE 'buc-ee%' OR name ILIKE 'bucee%'
+      ORDER BY id
+    `);
+
+    res.json({
+      message: "Buc-ee's KY fix applied",
+      updated: fix.rows,
+      allBucees: allBucees.rows,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
