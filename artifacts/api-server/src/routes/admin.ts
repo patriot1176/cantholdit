@@ -578,4 +578,110 @@ router.post("/admin/migrate-enum", async (req, res): Promise<void> => {
   }
 });
 
+/**
+ * POST /api/admin/seed-ohio?key=<ADMIN_SEED_KEY>
+ *
+ * Targeted gap-fill for Ohio, Indiana, Kentucky, and western Pennsylvania —
+ * the geographic seam missed between the Midwest and Northeast bboxes.
+ * Seeds both Walmart stores and fast-food chains.
+ * Safe to re-run (deduplicates by proximity).
+ */
+router.post("/admin/seed-ohio", async (req, res): Promise<void> => {
+  if (req.query.key !== ADMIN_KEY) {
+    res.status(401).json({ error: "Invalid key" });
+    return;
+  }
+
+  // Split into smaller sub-regions to avoid Overpass timeouts
+  const SUB_REGIONS = [
+    { name: "Ohio-West",   bbox: "38,-85,42,-82" },   // Dayton, Columbus, Toledo
+    { name: "Ohio-East",   bbox: "38,-82,42,-80" },   // Cleveland, Akron, Canton
+    { name: "Indiana-E",   bbox: "38,-87,42,-85" },   // Indianapolis east, Fort Wayne
+    { name: "Kentucky-N",  bbox: "36,-87,38,-80" },   // Lexington, Louisville, Cincinnati
+    { name: "W-PA",        bbox: "39,-80,42,-77" },   // Pittsburgh area
+    { name: "Michigan-S",  bbox: "41,-87,43,-82" },   // Detroit area, Flint, Lansing
+  ];
+
+  const CHAINS = [
+    "McDonald's", "Subway", "Taco Bell", "Burger King", "Wendy's",
+    "Chick-fil-A", "Arby's", "Sonic", "Dairy Queen", "Starbucks",
+    "Dunkin'", "Panera Bread", "Popeyes", "KFC", "Hardee's",
+    "Bob Evans", "Skyline Chili", "Frisch's Big Boy",
+  ];
+  const brandRegex = CHAINS.map((c) => c.replace(/'/g, "\\'")).join("|");
+
+  const results: Record<string, { walmart: number; fastFood: number; skipped: number; error?: string }> = {};
+  let totalInserted = 0;
+
+  for (const region of SUB_REGIONS) {
+    let walmartInserted = 0, fastFoodInserted = 0, skipped = 0;
+    try {
+      // Walmart
+      const walmartQuery = `[out:json][timeout:30];node["brand"="Walmart"](${region.bbox});out;`;
+      const wResp = await fetch(OVERPASS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "data=" + encodeURIComponent(walmartQuery),
+      });
+      if (wResp.ok) {
+        const wData = await wResp.json();
+        for (const el of (wData.elements || [])) {
+          const lat = el.lat, lng = el.lon;
+          const tags = el.tags || {};
+          const name = (tags.brand || tags.name || "Walmart").trim();
+          if (!lat || !lng || lat < 24 || lat > 50 || lng < -126 || lng > -65) { skipped++; continue; }
+          const nearby = await db.execute(sql`SELECT id FROM stops WHERE ABS(lat - ${lat}) < 0.003 AND ABS(lng - ${lng}) < 0.003 LIMIT 1`);
+          if (nearby.rows.length > 0) { skipped++; continue; }
+          const city = tags["addr:city"] || "";
+          const state = tags["addr:state"] || "";
+          const address = [city, state].filter(Boolean).join(", ") || name;
+          await db.execute(sql`INSERT INTO stops (name, address, type, lat, lng, hours, highway, amenities) VALUES (${name}, ${address}, 'walmart', ${lat}, ${lng}, ${tags.opening_hours || null}, null, ${JSON.stringify(["restrooms", "parking"])})`);
+          walmartInserted++;
+        }
+      }
+
+      await new Promise((r) => setTimeout(r, 1000));
+
+      // Fast food
+      const ffQuery = `[out:json][timeout:30];node["amenity"="fast_food"]["brand"~"${brandRegex}"](${region.bbox});out;`;
+      const fResp = await fetch(OVERPASS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "data=" + encodeURIComponent(ffQuery),
+      });
+      if (fResp.ok) {
+        const fData = await fResp.json();
+        for (const el of (fData.elements || [])) {
+          const lat = el.lat, lng = el.lon;
+          const tags = el.tags || {};
+          const name = (tags.brand || tags.name || "").trim();
+          if (!name || !lat || !lng || lat < 24 || lat > 50 || lng < -126 || lng > -65) { skipped++; continue; }
+          const nearby = await db.execute(sql`SELECT id FROM stops WHERE ABS(lat - ${lat}) < 0.003 AND ABS(lng - ${lng}) < 0.003 LIMIT 1`);
+          if (nearby.rows.length > 0) { skipped++; continue; }
+          const city = tags["addr:city"] || "";
+          const state = tags["addr:state"] || "";
+          const street = tags["addr:housenumber"] ? `${tags["addr:housenumber"]} ${tags["addr:street"] || ""}`.trim() : (tags["addr:street"] || "");
+          const address = [street, city, state].filter(Boolean).join(", ") || name;
+          await db.execute(sql`INSERT INTO stops (name, address, type, lat, lng, hours, highway, amenities) VALUES (${name}, ${address}, 'fast_food', ${lat}, ${lng}, ${tags.opening_hours || null}, null, ${JSON.stringify(["restrooms", "food"])})`);
+          fastFoodInserted++;
+        }
+      }
+
+      results[region.name] = { walmart: walmartInserted, fastFood: fastFoodInserted, skipped };
+      totalInserted += walmartInserted + fastFoodInserted;
+    } catch (err: any) {
+      results[region.name] = { walmart: walmartInserted, fastFood: fastFoodInserted, skipped, error: err.message };
+    }
+    await new Promise((r) => setTimeout(r, 1200));
+  }
+
+  const total = await db.execute(sql`SELECT count(*) FROM stops`);
+  res.json({
+    message: "Ohio gap-fill complete",
+    totalInserted,
+    results,
+    totalStops: Number((total.rows[0] as any).count),
+  });
+});
+
 export default router;
