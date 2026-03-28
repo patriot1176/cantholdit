@@ -696,16 +696,44 @@ router.post("/admin/fix-bucees-ky", async (req, res): Promise<void> => {
     return;
   }
   try {
-    // Update Winchester → Richmond, KY (I-75 exit 87)
-    const fix = await db.execute(sql`
+    // Fix ID 4: Winchester → Richmond, KY (1013 Buc-ee's Blvd, I-75)
+    const fixRichmond = await db.execute(sql`
       UPDATE stops
       SET name    = 'Buc-ee''s Richmond',
-          address = '107 Buc-ee''s Blvd, Richmond, KY 40475',
+          address = '1013 Buc-ee''s Blvd, Richmond, KY 40475',
           lat     = 37.748,
           lng     = -84.296
       WHERE id = 4
       RETURNING id, name, address, lat, lng
     `);
+
+    // Remove ID 13: Florence, KY — no Buc-ee's exists there (confused with Florence, SC)
+    const deleteFlorence = await db.execute(sql`
+      DELETE FROM stops WHERE id = 13 RETURNING id, name
+    `);
+
+    // Add Smiths Grove, KY (4001 Smiths Grove-Scottsville Rd, I-65)
+    const existingSmithsGrove = await db.execute(sql`
+      SELECT id FROM stops WHERE ABS(lat - 37.046) < 0.05 AND ABS(lng - (-86.218)) < 0.05 LIMIT 1
+    `);
+    let addedSmithsGrove = null;
+    if (existingSmithsGrove.rows.length === 0) {
+      const ins = await db.execute(sql`
+        INSERT INTO stops (name, address, type, lat, lng, hours, highway, amenities)
+        VALUES (
+          'Buc-ee''s Smiths Grove',
+          '4001 Smiths Grove-Scottsville Rd, Smiths Grove, KY 42171',
+          'gas_station',
+          37.046,
+          -86.218,
+          null,
+          null,
+          ${JSON.stringify(["restrooms", "food", "gas", "parking", "shower"])}
+        )
+        RETURNING id, name, address, lat, lng
+      `);
+      addedSmithsGrove = ins.rows[0];
+    }
 
     const allBucees = await db.execute(sql`
       SELECT id, name, address, lat, lng FROM stops
@@ -715,7 +743,9 @@ router.post("/admin/fix-bucees-ky", async (req, res): Promise<void> => {
 
     res.json({
       message: "Buc-ee's KY fix applied",
-      updated: fix.rows,
+      fixedRichmond: fixRichmond.rows,
+      deletedFlorence: deleteFlorence.rows,
+      addedSmithsGrove,
       allBucees: allBucees.rows,
     });
   } catch (err: any) {
