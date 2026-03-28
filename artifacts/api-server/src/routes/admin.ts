@@ -358,7 +358,7 @@ router.post("/admin/seed-walmart", async (req, res): Promise<void> => {
 
   for (const region of REGIONS) {
     try {
-      const walmartQuery = `[out:json][timeout:30];node["brand"="Walmart"](${region.bbox});out;`;
+      const walmartQuery = `[out:json][timeout:30];(node["brand"="Walmart"](${region.bbox});way["brand"="Walmart"](${region.bbox}););out center;`;
       const resp = await fetch(OVERPASS_URL, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -438,7 +438,7 @@ router.post("/admin/seed-fastfood", async (req, res): Promise<void> => {
 
   for (const region of REGIONS) {
     try {
-      const query = `[out:json][timeout:30];node["amenity"="fast_food"]["brand"~"${brandRegex}"](${region.bbox});out;`;
+      const query = `[out:json][timeout:30];(node["amenity"="fast_food"]["brand"~"${brandRegex}"](${region.bbox});way["amenity"="fast_food"]["brand"~"${brandRegex}"](${region.bbox}););out center;`;
       const resp = await fetch(OVERPASS_URL, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -616,8 +616,8 @@ router.post("/admin/seed-ohio", async (req, res): Promise<void> => {
   for (const region of SUB_REGIONS) {
     let walmartInserted = 0, fastFoodInserted = 0, skipped = 0;
     try {
-      // Walmart
-      const walmartQuery = `[out:json][timeout:30];node["brand"="Walmart"](${region.bbox});out;`;
+      // Walmart — query both nodes and ways (most Walmarts in OSM are ways)
+      const walmartQuery = `[out:json][timeout:30];(node["brand"="Walmart"](${region.bbox});way["brand"="Walmart"](${region.bbox}););out center;`;
       const wResp = await fetch(OVERPASS_URL, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -626,7 +626,7 @@ router.post("/admin/seed-ohio", async (req, res): Promise<void> => {
       if (wResp.ok) {
         const wData = await wResp.json();
         for (const el of (wData.elements || [])) {
-          const lat = el.lat, lng = el.lon;
+          const lat = el.lat ?? el.center?.lat, lng = el.lon ?? el.center?.lon;
           const tags = el.tags || {};
           const name = (tags.brand || tags.name || "Walmart").trim();
           if (!lat || !lng || lat < 24 || lat > 50 || lng < -126 || lng > -65) { skipped++; continue; }
@@ -642,8 +642,8 @@ router.post("/admin/seed-ohio", async (req, res): Promise<void> => {
 
       await new Promise((r) => setTimeout(r, 1000));
 
-      // Fast food
-      const ffQuery = `[out:json][timeout:30];node["amenity"="fast_food"]["brand"~"${brandRegex}"](${region.bbox});out;`;
+      // Fast food — query both nodes and ways
+      const ffQuery = `[out:json][timeout:30];(node["amenity"="fast_food"]["brand"~"${brandRegex}"](${region.bbox});way["amenity"="fast_food"]["brand"~"${brandRegex}"](${region.bbox}););out center;`;
       const fResp = await fetch(OVERPASS_URL, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -652,7 +652,7 @@ router.post("/admin/seed-ohio", async (req, res): Promise<void> => {
       if (fResp.ok) {
         const fData = await fResp.json();
         for (const el of (fData.elements || [])) {
-          const lat = el.lat, lng = el.lon;
+          const lat = el.lat ?? el.center?.lat, lng = el.lon ?? el.center?.lon;
           const tags = el.tags || {};
           const name = (tags.brand || tags.name || "").trim();
           if (!name || !lat || !lng || lat < 24 || lat > 50 || lng < -126 || lng > -65) { skipped++; continue; }
