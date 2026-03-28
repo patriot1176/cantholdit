@@ -1,12 +1,19 @@
 import { Link } from "wouter";
 import { motion } from "framer-motion";
-import { MapPin, Star, Route, Plus, Trophy, Navigation, Search, ThumbsUp } from "lucide-react";
+import { MapPin, Star, Route, Plus, Trophy, Navigation, Search, ThumbsUp, Camera } from "lucide-react";
+
+const stats = [
+  { value: "18,000+", label: "Stops mapped" },
+  { value: "6,100+", label: "Gas stations" },
+  { value: "2,280", label: "Rest areas" },
+  { value: "50", label: "States covered" },
+];
 
 const features = [
   {
     icon: "🗺️",
     title: "Live Map",
-    desc: "See every rated rest stop, gas station, and fast-food bathroom on an interactive map. Color-coded by rating so you know what you're walking into.",
+    desc: "18,000+ stops nationwide — rest areas, gas stations, fast food, Walmarts, and truck stops — all on one map. Color-coded by rating.",
   },
   {
     icon: "🚽",
@@ -16,12 +23,12 @@ const features = [
   {
     icon: "🛣️",
     title: "Route Planner",
-    desc: "Enter your start and end cities and see every rated stop within 15 miles of your driving route — no surprises mid-trip.",
+    desc: "Enter your start and end cities and see every stop within 15 miles of your driving route — spaced out every 30 miles so you're never caught off guard.",
   },
   {
-    icon: "📍",
-    title: "Add Stops",
-    desc: "Found a gem that isn't on the map? Add it in seconds using GPS or search. Help the next road tripper.",
+    icon: "⛽",
+    title: "Gas Stations",
+    desc: "6,100+ stations from 15 major chains: Wawa, Sheetz, QuikTrip, Buc-ee's, Circle K, 7-Eleven, Speedway, Kwik Trip, and more.",
   },
   {
     icon: "🏆",
@@ -31,7 +38,17 @@ const features = [
   {
     icon: "♿",
     title: "Amenity Tags",
-    desc: "Filter by accessibility, baby changing stations, showers, pet areas, EV charging, WiFi, and more.",
+    desc: "Filter by accessibility, baby changing stations, showers, pet areas, EV charging, WiFi, parking, and more.",
+  },
+  {
+    icon: "📍",
+    title: "Add Stops",
+    desc: "Found a gem that isn't on the map? Add it in seconds using GPS or search. Highway tagging helps others filter by route.",
+  },
+  {
+    icon: "📸",
+    title: "Photo Uploads",
+    desc: "See what you're walking into before you commit. Upload photos after your visit so the next person knows what to expect.",
   },
 ];
 
@@ -52,14 +69,20 @@ const steps = [
     num: "3",
     icon: <Star className="w-5 h-5" />,
     title: "Rate it",
-    desc: "After a visit, leave a flush rating in under 30 seconds. Your review helps other road trippers.",
+    desc: "After a visit, leave a flush rating in under 30 seconds. Your score helps every road tripper who comes after you.",
   },
   {
     num: "4",
     icon: <Plus className="w-5 h-5" />,
     title: "Add missing stops",
-    desc: "Not on the map yet? Tap + and contribute it. Highway tagging helps others filter by route.",
+    desc: "Not on the map yet? Tap + and contribute it. The database grows every day thanks to people like you.",
   },
+];
+
+const chains = [
+  "Buc-ee's", "Wawa", "Sheetz", "QuikTrip", "Speedway",
+  "Circle K", "7-Eleven", "Kwik Trip", "Maverik", "Casey's",
+  "RaceTrac", "Holiday", "Kum & Go", "Kwik Star",
 ];
 
 const fadeUp = {
@@ -135,7 +158,7 @@ export default function About() {
             transition={{ delay: 0.28 }}
             className="text-muted-foreground text-base max-w-xs mx-auto leading-relaxed mb-8"
           >
-            The community-powered restroom finder built for US road trippers. Find, rate, and add stops along any route.
+            The community-powered restroom finder built for US road trippers. 18,000+ stops across all 50 states — free, no sign-in, no BS.
           </motion.p>
           <motion.div
             initial={{ opacity: 0, y: 12 }}
@@ -160,8 +183,26 @@ export default function About() {
           <div className="absolute bottom-4 left-8 w-2 h-2 rounded-full bg-blue-300/40" />
         </section>
 
+        {/* Stats bar */}
+        <section className="mx-4 mb-6">
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.4 }}
+            className="bg-gradient-to-r from-slate-800 to-slate-700 rounded-3xl px-4 py-5 grid grid-cols-4 gap-2 text-center"
+          >
+            {stats.map((s) => (
+              <div key={s.label} className="flex flex-col gap-0.5">
+                <span className="font-display font-black text-white text-lg leading-none">{s.value}</span>
+                <span className="text-slate-400 text-[10px] leading-tight">{s.label}</span>
+              </div>
+            ))}
+          </motion.div>
+        </section>
+
         {/* Features */}
-        <section className="px-5 py-10">
+        <section className="px-5 py-6">
           <motion.h3
             initial="hidden"
             whileInView="show"
@@ -200,6 +241,33 @@ export default function About() {
               </motion.div>
             ))}
           </div>
+        </section>
+
+        {/* Gas chain logos */}
+        <section className="mx-4 mb-6">
+          <motion.div
+            initial="hidden"
+            whileInView="show"
+            viewport={{ once: true }}
+            custom={0}
+            variants={fadeUp}
+            className="rounded-3xl bg-amber-50 border border-amber-200/60 p-5"
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-2xl">⛽</span>
+              <h3 className="font-display font-black text-base text-foreground">Major chains covered</h3>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {chains.map((chain) => (
+                <span
+                  key={chain}
+                  className="text-xs font-bold bg-white border border-amber-200 text-amber-800 px-2.5 py-1 rounded-full"
+                >
+                  {chain}
+                </span>
+              ))}
+            </div>
+          </motion.div>
         </section>
 
         {/* How to use */}
@@ -258,7 +326,6 @@ export default function About() {
             variants={fadeUp}
             className="rounded-3xl border border-slate-200 bg-white overflow-hidden shadow-sm"
           >
-            {/* Header */}
             <div className="bg-gradient-to-r from-slate-800 to-slate-700 px-5 py-4 flex items-center gap-3">
               <span className="text-3xl leading-none">📱</span>
               <div>
@@ -268,13 +335,10 @@ export default function About() {
             </div>
 
             <div className="px-5 py-5 flex flex-col gap-5">
-
-              {/* Why location is needed */}
               <p className="text-sm text-muted-foreground leading-relaxed">
                 Can't Hold It uses your location to find nearby stops and to accurately pin new ones you add. Safari on iPhone blocks this by default — here's how to allow it.
               </p>
 
-              {/* Step-by-step */}
               <div className="flex flex-col gap-3">
                 <p className="text-xs font-bold text-foreground uppercase tracking-wide">If location is blocked or not working:</p>
 
@@ -295,10 +359,8 @@ export default function About() {
                 ))}
               </div>
 
-              {/* Divider */}
               <div className="border-t border-border/50" />
 
-              {/* Private mode warning */}
               <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
                 <span className="text-xl leading-none mt-0.5">⚠️</span>
                 <div>
@@ -309,7 +371,6 @@ export default function About() {
                 </div>
               </div>
 
-              {/* First-time prompt tip */}
               <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3">
                 <span className="text-xl leading-none mt-0.5">💡</span>
                 <div>
@@ -319,7 +380,6 @@ export default function About() {
                   </p>
                 </div>
               </div>
-
             </div>
           </motion.div>
         </section>
@@ -336,10 +396,14 @@ export default function About() {
             <div className="text-3xl mb-2">🛣️</div>
             <h3 className="font-display text-xl font-black mb-2 leading-tight">Planning a road trip?</h3>
             <p className="text-white/80 text-sm leading-relaxed mb-4">
-              Enter your start and end cities in the <strong className="text-white">Route tab</strong>. We'll show you every rated stop within 15 miles of your driving route — sorted by distance from the highway.
+              Enter your start and end cities in the <strong className="text-white">Route tab</strong>. We'll show you every rated stop within 15 miles of your route — auto-spaced every 30 miles so you always have a plan.
             </p>
-            <div className="text-sm font-bold bg-white/20 rounded-xl px-3 py-2 inline-block">
-              Try: Nashville → Atlanta
+            <div className="flex flex-wrap gap-2">
+              {["Chicago → Nashville", "LA → Las Vegas", "NYC → Boston"].map((r) => (
+                <div key={r} className="text-sm font-bold bg-white/20 rounded-xl px-3 py-2">
+                  {r}
+                </div>
+              ))}
             </div>
           </motion.div>
         </section>
@@ -358,11 +422,11 @@ export default function About() {
             <p className="text-muted-foreground text-sm leading-relaxed max-w-xs mx-auto mb-4">
               Every stop, rating, and photo is contributed by real people on real road trips. The more you contribute, the better it gets for everyone.
             </p>
-            <div className="flex justify-center gap-4 flex-wrap">
+            <div className="flex justify-center gap-3 flex-wrap">
               {[
                 { icon: <Star className="w-4 h-4" />, label: "Rate stops" },
                 { icon: <Plus className="w-4 h-4" />, label: "Add spots" },
-                { icon: <ThumbsUp className="w-4 h-4" />, label: "Tag amenities" },
+                { icon: <Camera className="w-4 h-4" />, label: "Upload photos" },
                 { icon: <Trophy className="w-4 h-4" />, label: "Top the board" },
               ].map((item) => (
                 <div key={item.label} className="flex items-center gap-1.5 text-xs font-bold text-primary bg-primary/10 px-3 py-1.5 rounded-full">
@@ -404,7 +468,7 @@ export default function About() {
 
         {/* Footer */}
         <footer className="border-t border-border/50 px-5 py-5 text-center text-xs text-muted-foreground">
-          <p>© 2025 Can't Hold It · Community-powered · <Link href="/" className="text-primary font-medium">Open App</Link></p>
+          <p>© 2026 Can't Hold It · Community-powered · <Link href="/" className="text-primary font-medium">Open App</Link></p>
         </footer>
 
       </main>
