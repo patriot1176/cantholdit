@@ -270,6 +270,7 @@ export default function AddStop() {
   const [searching, setSearching] = useState(false);
   const [locatingMe, setLocatingMe] = useState(false);
   const [locateError, setLocateError] = useState<string | null>(null);
+  const [detectingHighway, setDetectingHighway] = useState(false);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
 
@@ -338,7 +339,9 @@ export default function AddStop() {
     }
     // Auto-detect nearby highway if field is empty
     if (!form.getValues("highway")?.trim()) {
+      setDetectingHighway(true);
       const highway = await detectHighwayFromCoords(place.lat, place.lng);
+      setDetectingHighway(false);
       if (highway && !form.getValues("highway")?.trim()) {
         form.setValue("highway", highway);
       }
@@ -652,13 +655,22 @@ export default function AddStop() {
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-base leading-none select-none">🛣️</span>
             <input
               {...form.register("highway")}
-              placeholder='e.g. "I-40", "US-1", "US-66"'
-              className="w-full bg-slate-50 border border-border rounded-2xl pl-9 pr-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all placeholder:text-muted-foreground/60 uppercase"
+              placeholder={detectingHighway ? "Detecting nearby highway…" : 'e.g. "I-40", "US-1", "US-66"'}
+              disabled={detectingHighway}
+              className="w-full bg-slate-50 border border-border rounded-2xl pl-9 pr-10 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all placeholder:text-muted-foreground/60 uppercase disabled:opacity-60"
               onChange={(e) => {
                 const raw = e.target.value;
                 form.setValue("highway", raw.toUpperCase());
               }}
             />
+            {detectingHighway && (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                <svg className="animate-spin w-4 h-4 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                </svg>
+              </span>
+            )}
           </div>
         </div>
 

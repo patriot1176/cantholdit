@@ -89,22 +89,31 @@ function pointToSegmentKm(
   return haversineKm(pLat, pLng, closestLat, closestLng);
 }
 
-// Filter stops within ROUTE_BUFFER_KM of the polyline
+// Filter stops within ROUTE_BUFFER_KM of the polyline — returns stops sorted by travel order + per-stop distances
 function filterStopsNearRoute(
-  stops: { lat: number; lng: number; [k: string]: any }[],
+  stops: { id: number; lat: number; lng: number; [k: string]: any }[],
   polyline: [number, number][]
-): typeof stops {
-  return stops.filter((stop) => {
+): { sorted: typeof stops; distances: Record<number, number> } {
+  const entries: { stop: typeof stops[0]; distKm: number; routeT: number }[] = [];
+  for (const stop of stops) {
+    let minDist = Infinity;
+    let bestIdx = 0;
     for (let i = 0; i < polyline.length - 1; i++) {
       const d = pointToSegmentKm(
         stop.lat, stop.lng,
         polyline[i][0], polyline[i][1],
         polyline[i + 1][0], polyline[i + 1][1]
       );
-      if (d <= ROUTE_BUFFER_KM) return true;
+      if (d < minDist) { minDist = d; bestIdx = i; }
     }
-    return false;
-  });
+    if (minDist <= ROUTE_BUFFER_KM) {
+      entries.push({ stop, distKm: minDist, routeT: bestIdx });
+    }
+  }
+  entries.sort((a, b) => a.routeT - b.routeT);
+  const distances: Record<number, number> = {};
+  for (const e of entries) distances[e.stop.id] = e.distKm;
+  return { sorted: entries.map((e) => e.stop), distances };
 }
 
 export default function Home() {
@@ -215,6 +224,11 @@ export default function Home() {
   const [routeError, setRouteError] = useState<string | null>(null);
   const [routePolyline, setRoutePolyline] = useState<[number, number][] | null>(null);
   const [routeStops, setRouteStops] = useState<NonNullable<typeof allStops> | null>(null);
+  const [routeStopDistances, setRouteStopDistances] = useState<Record<number, number>>({});
+  const [routeFromSuggestions, setRouteFromSuggestions] = useState<GeoResult[]>([]);
+  const [routeToSuggestions, setRouteToSuggestions] = useState<GeoResult[]>([]);
+  const routeFromTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const routeToTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const findStopsAlongRoute = useCallback(async () => {
     if (!routeFrom.trim() || !routeTo.trim()) {
@@ -225,25 +239,51 @@ export default function Home() {
       setRouteError("Stop data not loaded yet — try again in a moment.");
       return;
     }
+    setRouteFromSuggestions([]);
+    setRouteToSuggestions([]);
     setRouteSearching(true);
     setRouteError(null);
     setRoutePolyline(null);
     setRouteStops(null);
+    setRouteStopDistances({});
     try {
       const [start, end] = await Promise.all([geocodeOne(routeFrom), geocodeOne(routeTo)]);
       if (!start) { setRouteError(`Couldn't find "${routeFrom}" — try a city + state.`); return; }
       if (!end) { setRouteError(`Couldn't find "${routeTo}" — try a city + state.`); return; }
       const polyline = await fetchOsrmRoute(start, end);
       if (!polyline) { setRouteError("Couldn't compute a driving route between those cities."); return; }
-      const nearby = filterStopsNearRoute(allStops, polyline);
+      const { sorted, distances } = filterStopsNearRoute(allStops, polyline);
       setRoutePolyline(polyline);
-      setRouteStops(nearby);
+      setRouteStops(sorted);
+      setRouteStopDistances(distances);
     } catch {
       setRouteError("Something went wrong. Please try again.");
     } finally {
       setRouteSearching(false);
     }
   }, [routeFrom, routeTo, allStops]);
+
+  // Debounced city suggestions for route "from" input
+  useEffect(() => {
+    if (routeFromTimer.current) clearTimeout(routeFromTimer.current);
+    if (!routeFrom.trim() || routeFrom.length < 3) { setRouteFromSuggestions([]); return; }
+    routeFromTimer.current = setTimeout(async () => {
+      const results = await geocodeSuggest(routeFrom);
+      setRouteFromSuggestions(results);
+    }, 500);
+    return () => { if (routeFromTimer.current) clearTimeout(routeFromTimer.current); };
+  }, [routeFrom]);
+
+  // Debounced city suggestions for route "to" input
+  useEffect(() => {
+    if (routeToTimer.current) clearTimeout(routeToTimer.current);
+    if (!routeTo.trim() || routeTo.length < 3) { setRouteToSuggestions([]); return; }
+    routeToTimer.current = setTimeout(async () => {
+      const results = await geocodeSuggest(routeTo);
+      setRouteToSuggestions(results);
+    }, 500);
+    return () => { if (routeToTimer.current) clearTimeout(routeToTimer.current); };
+  }, [routeTo]);
 
   // Client-side proximity filter: within 300km of searchCenter; sorted nearest-first when searching.
   // Falls back to GPS location for sort-by-distance in list/leaderboard views even without explicit search.
@@ -738,29 +778,81 @@ export default function Home() {
 
               {/* Route inputs */}
               <div className="bg-white rounded-3xl p-4 shadow-sm border border-border flex flex-col gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-3 h-3 rounded-full bg-green-500 shrink-0 border-2 border-white shadow" />
-                  <input
-                    type="text"
-                    placeholder="Start city (e.g. Nashville, TN)"
-                    value={routeFrom}
-                    onChange={(e) => setRouteFrom(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && findStopsAlongRoute()}
-                    className="flex-1 bg-slate-50 rounded-xl px-3 py-2.5 text-sm font-medium border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
-                  />
+                {/* From */}
+                <div className="relative">
+                  <div className="flex items-center gap-3">
+                    <div className="w-3 h-3 rounded-full bg-green-500 shrink-0 border-2 border-white shadow" />
+                    <div className="flex-1 flex items-center gap-1 bg-slate-50 rounded-xl border border-border focus-within:ring-2 focus-within:ring-primary/40 pr-1">
+                      <input
+                        type="text"
+                        autoComplete="off"
+                        placeholder="Start city (e.g. Nashville, TN)"
+                        value={routeFrom}
+                        onChange={(e) => { setRouteFrom(e.target.value); setRouteFromSuggestions([]); }}
+                        onKeyDown={(e) => { if (e.key === "Enter") findStopsAlongRoute(); if (e.key === "Escape") setRouteFromSuggestions([]); }}
+                        className="flex-1 bg-transparent px-3 py-2.5 text-sm font-medium focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        title="Use my location"
+                        onClick={() => {
+                          if (!("geolocation" in navigator)) return;
+                          navigator.geolocation.getCurrentPosition(async (pos) => {
+                            const { latitude: lat, longitude: lng } = pos.coords;
+                            try {
+                              const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, { headers: { "Accept-Language": "en" } });
+                              const d = await res.json();
+                              const parts = (d.display_name as string).split(",").map((s: string) => s.trim());
+                              setRouteFrom(parts.slice(0, 2).join(", "));
+                            } catch { setRouteFrom(`${lat.toFixed(4)}, ${lng.toFixed(4)}`); }
+                          }, () => {});
+                        }}
+                        className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-primary/10 transition-colors"
+                      >
+                        <LocateFixed className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  {routeFromSuggestions.length > 0 && (
+                    <div className="absolute left-6 right-0 top-full mt-1 z-20 bg-white rounded-2xl shadow-xl border border-border overflow-hidden">
+                      {routeFromSuggestions.slice(0, 4).map((s, i) => (
+                        <button key={i} type="button" className="w-full text-left px-4 py-2.5 text-sm font-medium text-foreground hover:bg-primary/5 border-t border-border/40 first:border-0 transition-colors"
+                          onClick={() => { setRouteFrom(s.label); setRouteFromSuggestions([]); }}>
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
+
                 <div className="w-0.5 h-4 bg-slate-200 ml-[5px]" />
-                <div className="flex items-center gap-3">
-                  <div className="w-3 h-3 rounded-full bg-red-500 shrink-0 border-2 border-white shadow" />
-                  <input
-                    type="text"
-                    placeholder="End city (e.g. Atlanta, GA)"
-                    value={routeTo}
-                    onChange={(e) => setRouteTo(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && findStopsAlongRoute()}
-                    className="flex-1 bg-slate-50 rounded-xl px-3 py-2.5 text-sm font-medium border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
-                  />
+
+                {/* To */}
+                <div className="relative">
+                  <div className="flex items-center gap-3">
+                    <div className="w-3 h-3 rounded-full bg-red-500 shrink-0 border-2 border-white shadow" />
+                    <input
+                      type="text"
+                      autoComplete="off"
+                      placeholder="End city (e.g. Atlanta, GA)"
+                      value={routeTo}
+                      onChange={(e) => { setRouteTo(e.target.value); setRouteToSuggestions([]); }}
+                      onKeyDown={(e) => { if (e.key === "Enter") findStopsAlongRoute(); if (e.key === "Escape") setRouteToSuggestions([]); }}
+                      className="flex-1 bg-slate-50 rounded-xl px-3 py-2.5 text-sm font-medium border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    />
+                  </div>
+                  {routeToSuggestions.length > 0 && (
+                    <div className="absolute left-6 right-0 top-full mt-1 z-20 bg-white rounded-2xl shadow-xl border border-border overflow-hidden">
+                      {routeToSuggestions.slice(0, 4).map((s, i) => (
+                        <button key={i} type="button" className="w-full text-left px-4 py-2.5 text-sm font-medium text-foreground hover:bg-primary/5 border-t border-border/40 first:border-0 transition-colors"
+                          onClick={() => { setRouteTo(s.label); setRouteToSuggestions([]); }}>
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
+
                 <motion.button
                   whileTap={{ scale: 0.97 }}
                   disabled={routeSearching || !routeFrom.trim() || !routeTo.trim()}
@@ -828,20 +920,28 @@ export default function Home() {
                       </Link>
                     </div>
                   ) : (
-                    routeStops.map((stop) => (
+                    routeStops.map((stop, idx) => (
                       <Link key={stop.id} href={`/stop/${stop.id}`}>
                         <div className="bg-card rounded-2xl p-4 shadow-sm border border-border/50 hover:shadow-md hover:border-primary/30 transition-all active:scale-[0.98]">
                           <div className="flex justify-between items-start mb-1">
-                            <h3 className="font-display font-bold text-base text-foreground leading-tight flex-1 pr-2">{stop.name}</h3>
+                            <div className="flex items-center gap-2 flex-1 pr-2 min-w-0">
+                              <span className="shrink-0 w-5 h-5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-black flex items-center justify-center">{idx + 1}</span>
+                              <h3 className="font-display font-bold text-base text-foreground leading-tight truncate">{stop.name}</h3>
+                            </div>
                             <div className="bg-slate-50 px-2 py-1 rounded-lg border border-slate-100 flex flex-col items-center shrink-0">
                               <span className="text-sm font-bold text-foreground">{stop.overallRating?.toFixed(1) || "—"}</span>
                               <span className="text-[10px] text-muted-foreground">{stop.totalRatings} rev</span>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">{stop.type.replace("_", " ")}</p>
                             {stop.highway && (
                               <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded-full">🛣️ {stop.highway}</span>
+                            )}
+                            {routeStopDistances[stop.id] != null && (
+                              <span className="text-[10px] font-bold bg-green-50 text-green-700 border border-green-200 px-1.5 py-0.5 rounded-full">
+                                📍 {(routeStopDistances[stop.id] * 0.621371).toFixed(1)} mi off route
+                              </span>
                             )}
                           </div>
                           <p className="text-sm text-foreground/70 truncate">{stop.address}</p>
