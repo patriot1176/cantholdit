@@ -780,9 +780,13 @@ router.post("/admin/replace-bucees", async (req, res): Promise<void> => {
 
     if (ids.length > 0) {
       const idList = ids.join(",");
-      // Step 2: Delete ratings and reports first (no cascade), then stops
+      // Step 2: Delete ratings first (no cascade), try reports if table exists, then stops
       await client.query(`DELETE FROM ratings WHERE stop_id IN (${idList})`);
-      await client.query(`DELETE FROM reports WHERE stop_id IN (${idList})`);
+      try {
+        await client.query(`DELETE FROM reports WHERE stop_id IN (${idList})`);
+      } catch (_) {
+        // reports table may not exist yet — safe to skip
+      }
       // Photos cascade automatically
       await client.query(`DELETE FROM stops WHERE id IN (${idList})`);
     }
