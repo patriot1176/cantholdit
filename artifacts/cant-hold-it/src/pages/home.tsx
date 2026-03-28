@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Layout } from "@/components/layout";
 import { MapView } from "@/components/map-view";
 import { useLocation } from "@/hooks/use-location";
@@ -52,6 +52,7 @@ function haversineKm(
 
 const RADIUS_KM = 300;
 const ROUTE_BUFFER_KM = 24.14; // 15 miles
+const MIN_SPACING_KM = 48.28;  // 30 miles — minimum gap between consecutive route stops
 
 // Geocode a city/address to lat/lng (single best result)
 async function geocodeOne(q: string): Promise<{ lat: number; lng: number } | null> {
@@ -134,6 +135,29 @@ function filterStopsNearRoute(
   const distances: Record<number, number> = {};
   for (const e of entries) distances[e.stop.id] = e.distKm;
   return { sorted: entries.map((e) => e.stop), distances };
+}
+
+// Greedy spacing filter — keeps only stops that are at least minSpacingKm apart (as the crow flies).
+// When two stops are closer than the threshold, the better-rated one wins.
+function applyRouteSpacing<T extends { id: number; lat: number; lng: number; overallRating?: number | null }>(
+  stops: T[],
+  minSpacingKm: number
+): T[] {
+  const result: T[] = [];
+  for (const stop of stops) {
+    if (result.length === 0) {
+      result.push(stop);
+    } else {
+      const last = result[result.length - 1];
+      const dist = haversineKm(stop.lat, stop.lng, last.lat, last.lng);
+      if (dist >= minSpacingKm) {
+        result.push(stop);
+      } else if ((stop.overallRating ?? 0) > (last.overallRating ?? 0)) {
+        result[result.length - 1] = stop;
+      }
+    }
+  }
+  return result;
 }
 
 export default function Home() {
@@ -243,7 +267,12 @@ export default function Home() {
   const [routeSearching, setRouteSearching] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
   const [routePolyline, setRoutePolyline] = useState<[number, number][] | null>(null);
-  const [routeStops, setRouteStops] = useState<NonNullable<typeof allStops> | null>(null);
+  const [rawRouteStops, setRawRouteStops] = useState<NonNullable<typeof allStops> | null>(null);
+  const [routeSpaced, setRouteSpaced] = useState(true);
+  const routeStops = useMemo(
+    () => rawRouteStops === null ? null : routeSpaced ? applyRouteSpacing(rawRouteStops, MIN_SPACING_KM) : rawRouteStops,
+    [rawRouteStops, routeSpaced]
+  );
   const [routeStopDistances, setRouteStopDistances] = useState<Record<number, number>>({});
   const [routeApproximate, setRouteApproximate] = useState(false);
   const [routeFromSuggestions, setRouteFromSuggestions] = useState<GeoResult[]>([]);
@@ -268,7 +297,7 @@ export default function Home() {
     setRouteSearching(true);
     setRouteError(null);
     setRoutePolyline(null);
-    setRouteStops(null);
+    setRawRouteStops(null);
     setRouteStopDistances({});
     setRouteApproximate(false);
     try {
@@ -280,7 +309,7 @@ export default function Home() {
       const bufferKm = approximate ? 80.47 : ROUTE_BUFFER_KM;
       const { sorted, distances } = filterStopsNearRoute(allStops, polyline, bufferKm);
       setRoutePolyline(polyline);
-      setRouteStops(sorted);
+      setRawRouteStops(sorted);
       setRouteStopDistances(distances);
       setRouteApproximate(approximate);
     } catch {
@@ -933,13 +962,41 @@ export default function Home() {
                 <>
                   <div className="flex items-center justify-between">
                     <h3 className="font-display font-bold text-base text-foreground">
-                      {routeStops.length} stop{routeStops.length !== 1 ? "s" : ""} {routeApproximate ? "within 50 miles" : "within 15 miles"}
+                      {routeSpaced && rawRouteStops && rawRouteStops.length !== routeStops.length
+                        ? `${routeStops.length} of ${rawRouteStops.length} stops`
+                        : `${routeStops.length} stop${routeStops.length !== 1 ? "s" : ""}`}{" "}
+                      <span className="font-normal text-muted-foreground text-sm">
+                        {routeApproximate ? "within 50 miles" : "within 15 miles"}
+                      </span>
                     </h3>
                     <button
                       onClick={() => setViewMode("map")}
                       className="text-xs font-bold text-primary bg-primary/10 px-3 py-1.5 rounded-full"
                     >
                       View on Map
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground font-medium">Spacing:</span>
+                    <button
+                      onClick={() => setRouteSpaced(true)}
+                      className={`text-xs font-bold px-3 py-1.5 rounded-full transition-all border ${
+                        routeSpaced
+                          ? "bg-primary text-white border-primary shadow-sm"
+                          : "bg-white text-slate-600 border-slate-200 hover:border-primary/40"
+                      }`}
+                    >
+                      ~30 mi apart
+                    </button>
+                    <button
+                      onClick={() => setRouteSpaced(false)}
+                      className={`text-xs font-bold px-3 py-1.5 rounded-full transition-all border ${
+                        !routeSpaced
+                          ? "bg-primary text-white border-primary shadow-sm"
+                          : "bg-white text-slate-600 border-slate-200 hover:border-primary/40"
+                      }`}
+                    >
+                      Show all
                     </button>
                   </div>
 

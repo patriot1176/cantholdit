@@ -1,6 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { autoSeedIfEmpty } from "./lib/seed";
+import { autoSeedIfEmpty, cleanupPlaceholders } from "./lib/seed";
 
 const rawPort = process.env["PORT"];
 
@@ -16,14 +16,15 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-// Seed the database on first boot if it's empty (handles production deployments)
-autoSeedIfEmpty().then(() => {
-  app.listen(port, (err) => {
-    if (err) {
-      logger.error({ err }, "Error listening on port");
-      process.exit(1);
-    }
-
-    logger.info({ port }, "Server listening");
+// Seed the database on first boot if it's empty, then clean up placeholder data
+autoSeedIfEmpty()
+  .then(() => cleanupPlaceholders())
+  .then(() => {
+    app.listen(port, (err) => {
+      if (err) {
+        logger.error({ err }, "Error listening on port");
+        process.exit(1);
+      }
+      logger.info({ port }, "Server listening");
+    });
   });
-});

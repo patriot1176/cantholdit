@@ -1,5 +1,5 @@
 import { db, stopsTable, ratingsTable } from "@workspace/db";
-import { count } from "drizzle-orm";
+import { count, sql } from "drizzle-orm";
 import { logger } from "./logger";
 
 const SEED_STOPS = [
@@ -239,5 +239,75 @@ export async function autoSeedIfEmpty() {
     logger.info("Auto-seed complete");
   } catch (err) {
     logger.error({ err }, "Auto-seed failed — continuing without seed data");
+  }
+}
+
+/**
+ * One-time idempotent cleanup — removes French-Canadian/non-US placeholder stops
+ * that were imported from external sources. Runs every startup; safe to re-run.
+ */
+export async function cleanupPlaceholders() {
+  try {
+    // Rename first matching placeholder to "Example - Rest Area" (keep 1 per type)
+    await db.execute(sql`
+      UPDATE stops
+      SET name    = 'Example - Rest Area',
+          address = 'Example stop — add a real one near you!'
+      WHERE type = 'rest_area'
+        AND (
+          name ILIKE '%belv%dère%' OR name ILIKE '%belvedere%' OR
+          name ILIKE 'parc de%' OR name ILIKE 'le parc%' OR
+          name ILIKE 'l''abri%' OR name ILIKE 'relais de%' OR
+          name ILIKE 'stationnement%' OR name ILIKE 'banc de repos%'
+        )
+        AND id = (
+          SELECT id FROM stops
+          WHERE type = 'rest_area'
+            AND (
+              name ILIKE '%belv%dère%' OR name ILIKE '%belvedere%' OR
+              name ILIKE 'parc de%' OR name ILIKE 'le parc%' OR
+              name ILIKE 'l''abri%' OR name ILIKE 'relais de%' OR
+              name ILIKE 'stationnement%' OR name ILIKE 'banc de repos%'
+            )
+          ORDER BY id
+          LIMIT 1
+        )
+    `);
+
+    // Delete all remaining French-Canadian / non-US placeholder stops
+    const del = await db.execute(sql`
+      DELETE FROM stops
+      WHERE (
+        name ILIKE '%belv%dère%' OR name ILIKE '%belvedere%' OR
+        name ILIKE 'parc de%' OR name ILIKE 'le parc%' OR
+        name ILIKE 'l''abri%' OR name ILIKE 'relais de%' OR
+        name ILIKE 'stationnement%' OR name ILIKE 'banc de repos%'
+      )
+        AND name NOT ILIKE 'example%'
+    `);
+
+    // Fix trailing-space stop names introduced by early test data
+    await db.execute(sql`
+      UPDATE stops
+      SET name    = 'Example - Truck Stop',
+          address = 'Example stop — add a real one near you!'
+      WHERE name = 'Pilot ' AND type = 'truck_stop'
+    `);
+    await db.execute(sql`
+      UPDATE stops
+      SET name    = 'Example - Fast Food',
+          address = 'Example stop — add a real one near you!'
+      WHERE name = 'Culver''s ' AND type = 'fast_food'
+    `);
+
+    // Trim any remaining trailing spaces in names
+    await db.execute(sql`UPDATE stops SET name = TRIM(name) WHERE name != TRIM(name)`);
+
+    const deleted = Number((del as any).rowCount ?? 0);
+    if (deleted > 0) {
+      logger.info({ deleted }, "cleanupPlaceholders: removed non-US placeholder stops");
+    }
+  } catch (err) {
+    logger.error({ err }, "cleanupPlaceholders failed — continuing");
   }
 }
