@@ -60,18 +60,36 @@ async function geocodeOne(q: string): Promise<{ lat: number; lng: number } | nul
 }
 
 // Fetch driving route from OSRM between two points (returns [lat, lng][] polyline)
+// Falls back to a straight-line polyline if OSRM is unavailable or times out.
 async function fetchOsrmRoute(
   start: { lat: number; lng: number },
   end: { lat: number; lng: number }
-): Promise<[number, number][] | null> {
+): Promise<{ polyline: [number, number][]; approximate: boolean }> {
+  const buildFallback = (): { polyline: [number, number][]; approximate: boolean } => {
+    // 100-point straight line between start and end — works without OSRM
+    const pts: [number, number][] = [];
+    for (let i = 0; i <= 100; i++) {
+      const t = i / 100;
+      pts.push([start.lat + (end.lat - start.lat) * t, start.lng + (end.lng - start.lng) * t]);
+    }
+    return { polyline: pts, approximate: true };
+  };
   try {
     const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
-    const res = await fetch(url);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
     const data = await res.json();
-    if (!data.routes?.[0]?.geometry?.coordinates) return null;
+    if (!data.routes?.[0]?.geometry?.coordinates) return buildFallback();
     // GeoJSON coords are [lng, lat] → convert to [lat, lng] for Leaflet
-    return data.routes[0].geometry.coordinates.map(([lng, lat]: [number, number]) => [lat, lng] as [number, number]);
-  } catch { return null; }
+    const polyline: [number, number][] = data.routes[0].geometry.coordinates.map(
+      ([lng, lat]: [number, number]) => [lat, lng] as [number, number]
+    );
+    return { polyline, approximate: false };
+  } catch {
+    return buildFallback();
+  }
 }
 
 // Perpendicular distance from point P to segment AB in km
@@ -89,10 +107,11 @@ function pointToSegmentKm(
   return haversineKm(pLat, pLng, closestLat, closestLng);
 }
 
-// Filter stops within ROUTE_BUFFER_KM of the polyline — returns stops sorted by travel order + per-stop distances
+// Filter stops within bufferKm of the polyline — returns stops sorted by travel order + per-stop distances
 function filterStopsNearRoute(
   stops: { id: number; lat: number; lng: number; [k: string]: any }[],
-  polyline: [number, number][]
+  polyline: [number, number][],
+  bufferKm: number = ROUTE_BUFFER_KM
 ): { sorted: typeof stops; distances: Record<number, number> } {
   const entries: { stop: typeof stops[0]; distKm: number; routeT: number }[] = [];
   for (const stop of stops) {
@@ -106,7 +125,7 @@ function filterStopsNearRoute(
       );
       if (d < minDist) { minDist = d; bestIdx = i; }
     }
-    if (minDist <= ROUTE_BUFFER_KM) {
+    if (minDist <= bufferKm) {
       entries.push({ stop, distKm: minDist, routeT: bestIdx });
     }
   }
@@ -225,6 +244,7 @@ export default function Home() {
   const [routePolyline, setRoutePolyline] = useState<[number, number][] | null>(null);
   const [routeStops, setRouteStops] = useState<NonNullable<typeof allStops> | null>(null);
   const [routeStopDistances, setRouteStopDistances] = useState<Record<number, number>>({});
+  const [routeApproximate, setRouteApproximate] = useState(false);
   const [routeFromSuggestions, setRouteFromSuggestions] = useState<GeoResult[]>([]);
   const [routeToSuggestions, setRouteToSuggestions] = useState<GeoResult[]>([]);
   const routeFromTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -246,16 +266,19 @@ export default function Home() {
     setRoutePolyline(null);
     setRouteStops(null);
     setRouteStopDistances({});
+    setRouteApproximate(false);
     try {
       const [start, end] = await Promise.all([geocodeOne(routeFrom), geocodeOne(routeTo)]);
-      if (!start) { setRouteError(`Couldn't find "${routeFrom}" — try a city + state.`); return; }
-      if (!end) { setRouteError(`Couldn't find "${routeTo}" — try a city + state.`); return; }
-      const polyline = await fetchOsrmRoute(start, end);
-      if (!polyline) { setRouteError("Couldn't compute a driving route between those cities."); return; }
-      const { sorted, distances } = filterStopsNearRoute(allStops, polyline);
+      if (!start) { setRouteError(`Couldn't find "${routeFrom}" — try adding the state, e.g. "Nashville, TN".`); return; }
+      if (!end) { setRouteError(`Couldn't find "${routeTo}" — try adding the state, e.g. "Atlanta, GA".`); return; }
+      const { polyline, approximate } = await fetchOsrmRoute(start, end);
+      // Use a wider 50-mile buffer for straight-line fallback to ensure coverage
+      const bufferKm = approximate ? 80.47 : ROUTE_BUFFER_KM;
+      const { sorted, distances } = filterStopsNearRoute(allStops, polyline, bufferKm);
       setRoutePolyline(polyline);
       setRouteStops(sorted);
       setRouteStopDistances(distances);
+      setRouteApproximate(approximate);
     } catch {
       setRouteError("Something went wrong. Please try again.");
     } finally {
@@ -785,7 +808,7 @@ export default function Home() {
                     <div className="flex-1 flex items-center gap-1 bg-slate-50 rounded-xl border border-border focus-within:ring-2 focus-within:ring-primary/40 pr-1">
                       <input
                         type="text"
-                        autoComplete="off"
+                        autoComplete="new-password"
                         placeholder="Start city (e.g. Nashville, TN)"
                         value={routeFrom}
                         onChange={(e) => { setRouteFrom(e.target.value); setRouteFromSuggestions([]); }}
@@ -833,7 +856,7 @@ export default function Home() {
                     <div className="w-3 h-3 rounded-full bg-red-500 shrink-0 border-2 border-white shadow" />
                     <input
                       type="text"
-                      autoComplete="off"
+                      autoComplete="new-password"
                       placeholder="End city (e.g. Atlanta, GA)"
                       value={routeTo}
                       onChange={(e) => { setRouteTo(e.target.value); setRouteToSuggestions([]); }}
@@ -874,7 +897,7 @@ export default function Home() {
                 <>
                   <div className="flex items-center justify-between">
                     <h3 className="font-display font-bold text-base text-foreground">
-                      {routeStops.length} stop{routeStops.length !== 1 ? "s" : ""} within 15 miles
+                      {routeStops.length} stop{routeStops.length !== 1 ? "s" : ""} {routeApproximate ? "within 50 miles" : "within 15 miles"}
                     </h3>
                     <button
                       onClick={() => setViewMode("map")}
@@ -883,6 +906,13 @@ export default function Home() {
                       View on Map
                     </button>
                   </div>
+
+                  {routeApproximate && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs font-medium text-amber-800 flex items-start gap-2">
+                      <span className="shrink-0 mt-0.5">⚠️</span>
+                      <span>Showing stops near the straight-line path between cities (routing service unavailable). Results are within 50 miles of the direct path.</span>
+                    </div>
+                  )}
 
                   {/* Highway filter chips derived from route stops */}
                   {(() => {
