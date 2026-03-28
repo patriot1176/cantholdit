@@ -32,7 +32,7 @@ export default function StopDetail() {
   const queryClient = useQueryClient();
 
   const { data: stop, isLoading, error } = useGetStop(id, {
-    query: { enabled: id > 0 }
+    query: { enabled: id > 0, retry: false }
   });
 
   const { data: photos = [] } = useQuery<StopPhoto[]>({
