@@ -1073,4 +1073,27 @@ router.post("/admin/seed-gasstations-pacific", async (req, res): Promise<void> =
   })().catch((err) => console.error("[seed-pacific] fatal:", err));
 });
 
+/**
+ * POST /api/admin/bulk-insert-stops?key=<ADMIN_SEED_KEY>
+ * Body: { stops: Array<{ name, address, type, lat, lng, hours?, amenities? }> }
+ * Inserts stops directly, deduplicating by proximity. Used when Overpass is rate-limited.
+ */
+router.post("/admin/bulk-insert-stops", async (req, res): Promise<void> => {
+  if (req.query.key !== ADMIN_KEY) { res.status(401).json({ error: "Invalid key" }); return; }
+  const stops: any[] = req.body?.stops || [];
+  if (!Array.isArray(stops) || stops.length === 0) { res.status(400).json({ error: "stops array required" }); return; }
+
+  let inserted = 0, skipped = 0;
+  for (const s of stops) {
+    const { name, address, type, lat, lng, hours, amenities } = s;
+    if (!name || !lat || !lng || lat < 24 || lat > 50 || lng < -126 || lng > -65) { skipped++; continue; }
+    const nearby = await db.execute(sql`SELECT id FROM stops WHERE ABS(lat - ${lat}) < 0.003 AND ABS(lng - ${lng}) < 0.003 LIMIT 1`);
+    if (nearby.rows.length > 0) { skipped++; continue; }
+    await db.execute(sql`INSERT INTO stops (name, address, type, lat, lng, hours, amenities) VALUES (${name}, ${address || name}, ${type || 'gas_station'}, ${lat}, ${lng}, ${hours || null}, ${JSON.stringify(amenities || ['restrooms', 'gas', 'convenience'])})`);
+    inserted++;
+  }
+  const total = await db.execute(sql`SELECT count(*) FROM stops`);
+  res.json({ inserted, skipped, total: Number((total.rows[0] as any).count) });
+});
+
 export default router;
