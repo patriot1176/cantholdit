@@ -329,6 +329,157 @@ router.post("/admin/seed-batch", async (req, res): Promise<void> => {
 });
 
 /**
+ * POST /api/admin/seed-walmart?key=<ADMIN_SEED_KEY>
+ *
+ * Queries Overpass for all Walmart Supercenters / stores in the continental US
+ * and inserts them as `gas_station` type (they're primarily bathroom + fuel stops
+ * for road trippers).  Deduplicates by proximity. Safe to re-run.
+ */
+router.post("/admin/seed-walmart", async (req, res): Promise<void> => {
+  if (req.query.key !== ADMIN_KEY) {
+    res.status(401).json({ error: "Invalid key" });
+    return;
+  }
+
+  const REGIONS = [
+    { name: "Northeast",   bbox: "37,-80,47,-67" },
+    { name: "Southeast",   bbox: "25,-88,37,-79" },
+    { name: "Appalachian", bbox: "34,-90,37,-81" },
+    { name: "Midwest",     bbox: "37,-97,47,-82" },
+    { name: "Texas+Gulf",  bbox: "25,-107,37,-94" },
+    { name: "Plains",      bbox: "37,-105,47,-95" },
+    { name: "Mountain",    bbox: "37,-117,47,-103" },
+    { name: "Southwest",   bbox: "31,-114,37,-103" },
+    { name: "Pacific",     bbox: "32,-125,49,-117" },
+  ];
+
+  const results: Record<string, { inserted: number; skipped: number; error?: string }> = {};
+  let totalInserted = 0;
+
+  for (const region of REGIONS) {
+    try {
+      const walmartQuery = `[out:json][timeout:30];node["brand"="Walmart"](${region.bbox});out;`;
+      const resp = await fetch(OVERPASS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "data=" + encodeURIComponent(walmartQuery),
+      });
+      if (!resp.ok) throw new Error(`Overpass ${resp.status}`);
+      const data = await resp.json();
+      const els: any[] = data.elements || [];
+
+      let inserted = 0, skipped = 0;
+      for (const el of els) {
+        const lat = el.lat ?? el.center?.lat;
+        const lng = el.lon ?? el.center?.lon;
+        const tags = el.tags || {};
+        const name = (tags.name || tags.brand || "Walmart").trim();
+        if (!lat || !lng || lat < 24 || lat > 50 || lng < -126 || lng > -65) { skipped++; continue; }
+
+        const nearby = await db.execute(sql`SELECT id FROM stops WHERE ABS(lat - ${lat}) < 0.004 AND ABS(lng - ${lng}) < 0.004 LIMIT 1`);
+        if (nearby.rows.length > 0) { skipped++; continue; }
+
+        const city = tags["addr:city"] || "";
+        const state = tags["addr:state"] || "";
+        const street = tags["addr:street"] || "";
+        const address = [street, city, state].filter(Boolean).join(", ") || "Walmart";
+
+        await db.execute(sql`INSERT INTO stops (name, address, type, lat, lng, hours, highway, amenities) VALUES (${name}, ${address}, 'gas_station', ${lat}, ${lng}, null, null, ${JSON.stringify(["restrooms", "accessible", "parking", "vending"])})`);
+        inserted++;
+      }
+      results[region.name] = { inserted, skipped };
+      totalInserted += inserted;
+    } catch (err: any) {
+      results[region.name] = { inserted: 0, skipped: 0, error: err.message };
+    }
+    await new Promise((r) => setTimeout(r, 1200));
+  }
+
+  const total = await db.execute(sql`SELECT count(*) FROM stops`);
+  res.json({ message: "Walmart seed complete", totalInserted, totalStops: Number((total.rows[0] as any).count), regions: results });
+});
+
+/**
+ * POST /api/admin/seed-fastfood?key=<ADMIN_SEED_KEY>
+ *
+ * Queries Overpass for major fast-food chains (McDonald's, Subway, Taco Bell,
+ * Burger King, Wendy's, Chick-fil-A, Arby's, Sonic, Dairy Queen, Starbucks)
+ * and inserts them as `fast_food` type. Deduplicates by proximity.
+ */
+router.post("/admin/seed-fastfood", async (req, res): Promise<void> => {
+  if (req.query.key !== ADMIN_KEY) {
+    res.status(401).json({ error: "Invalid key" });
+    return;
+  }
+
+  const CHAINS = [
+    "McDonald's", "Subway", "Taco Bell", "Burger King", "Wendy's",
+    "Chick-fil-A", "Arby's", "Sonic", "Dairy Queen", "Starbucks",
+    "Dunkin'", "Panera Bread", "Popeyes", "KFC", "Hardee's",
+  ];
+  const brandFilter = CHAINS.map((c) => `["brand"="${c}"]`).join("|");
+  // Use a single regex on the brand tag
+  const brandRegex = CHAINS.map((c) => c.replace(/'/g, "\\'")).join("|");
+
+  const REGIONS = [
+    { name: "Northeast",   bbox: "37,-80,47,-67" },
+    { name: "Southeast",   bbox: "25,-88,37,-79" },
+    { name: "Appalachian", bbox: "34,-90,37,-81" },
+    { name: "Midwest",     bbox: "37,-97,47,-82" },
+    { name: "Texas+Gulf",  bbox: "25,-107,37,-94" },
+    { name: "Plains",      bbox: "37,-105,47,-95" },
+    { name: "Mountain",    bbox: "37,-117,47,-103" },
+    { name: "Southwest",   bbox: "31,-114,37,-103" },
+    { name: "Pacific",     bbox: "32,-125,49,-117" },
+  ];
+
+  const results: Record<string, { inserted: number; skipped: number; error?: string }> = {};
+  let totalInserted = 0;
+
+  for (const region of REGIONS) {
+    try {
+      const query = `[out:json][timeout:30];node["amenity"="fast_food"]["brand"~"${brandRegex}"](${region.bbox});out;`;
+      const resp = await fetch(OVERPASS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "data=" + encodeURIComponent(query),
+      });
+      if (!resp.ok) throw new Error(`Overpass ${resp.status}`);
+      const data = await resp.json();
+      const els: any[] = data.elements || [];
+
+      let inserted = 0, skipped = 0;
+      for (const el of els) {
+        const lat = el.lat ?? el.center?.lat;
+        const lng = el.lon ?? el.center?.lon;
+        const tags = el.tags || {};
+        const name = (tags.brand || tags.name || "").trim();
+        if (!name || !lat || !lng || lat < 24 || lat > 50 || lng < -126 || lng > -65) { skipped++; continue; }
+
+        const nearby = await db.execute(sql`SELECT id FROM stops WHERE ABS(lat - ${lat}) < 0.003 AND ABS(lng - ${lng}) < 0.003 LIMIT 1`);
+        if (nearby.rows.length > 0) { skipped++; continue; }
+
+        const city = tags["addr:city"] || "";
+        const state = tags["addr:state"] || "";
+        const street = tags["addr:housenumber"] ? `${tags["addr:housenumber"]} ${tags["addr:street"] || ""}`.trim() : (tags["addr:street"] || "");
+        const address = [street, city, state].filter(Boolean).join(", ") || name;
+
+        await db.execute(sql`INSERT INTO stops (name, address, type, lat, lng, hours, highway, amenities) VALUES (${name}, ${address}, 'fast_food', ${lat}, ${lng}, ${tags.opening_hours || null}, null, ${JSON.stringify(["restrooms", "food"])})`);
+        inserted++;
+      }
+      results[region.name] = { inserted, skipped };
+      totalInserted += inserted;
+    } catch (err: any) {
+      results[region.name] = { inserted: 0, skipped: 0, error: err.message };
+    }
+    await new Promise((r) => setTimeout(r, 1200));
+  }
+
+  const total = await db.execute(sql`SELECT count(*) FROM stops`);
+  res.json({ message: "Fast food seed complete", totalInserted, totalStops: Number((total.rows[0] as any).count), regions: results });
+});
+
+/**
  * POST /api/admin/fix-stop-types?key=<ADMIN_SEED_KEY>
  *
  * Corrects the `type` field for known commercial chains that were imported
