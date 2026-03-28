@@ -685,71 +685,131 @@ router.post("/admin/seed-ohio", async (req, res): Promise<void> => {
 });
 
 /**
- * POST /api/admin/fix-bucees-ky?key=<ADMIN_SEED_KEY>
+ * POST /api/admin/replace-bucees?key=<ADMIN_SEED_KEY>
  *
- * Corrects the erroneous "Winchester, KY" Buc-ee's entry (ID 4) to the
- * real Richmond, KY location (I-75 exit 87), and verifies Florence, KY is correct.
+ * Wipes all existing Buc-ee's stops and re-inserts the complete official
+ * location list from buc-ees.com. Handles FK constraints by deleting
+ * ratings and reports first, then stops, then inserting fresh data.
  */
-router.post("/admin/fix-bucees-ky", async (req, res): Promise<void> => {
+router.post("/admin/replace-bucees", async (req, res): Promise<void> => {
   if (req.query.key !== ADMIN_KEY) {
     res.status(401).json({ error: "Invalid key" });
     return;
   }
+
+  const AMENITIES = JSON.stringify(["restrooms", "food", "gas", "parking", "shower"]);
+
+  // Complete official Buc-ee's location list (from buc-ees.com)
+  const LOCATIONS = [
+    // Alabama
+    { name: "Buc-ee's Athens",          address: "2328 Lindsay Lane South, Athens, AL 35613",                lat: 34.790, lng: -86.951 },
+    { name: "Buc-ee's Auburn",          address: "2500 Buc-ee's Blvd, Auburn, AL 36832",                    lat: 32.603, lng: -85.480 },
+    { name: "Buc-ee's Leeds",           address: "6900 Buc-ee's Blvd, Leeds, AL 35094",                     lat: 33.548, lng: -86.557 },
+    { name: "Buc-ee's Loxley",          address: "20403 County Rd. 68, Robertsdale, AL 36567",              lat: 30.617, lng: -87.779 },
+    // Colorado
+    { name: "Buc-ee's Johnstown",       address: "5201 Nugget Road, Berthoud, CO 80513",                    lat: 40.354, lng: -104.978 },
+    // Florida
+    { name: "Buc-ee's Daytona Beach",   address: "2330 Gateway North Drive, Daytona Beach, FL 32117",       lat: 29.143, lng: -81.083 },
+    { name: "Buc-ee's Saint Augustine", address: "200 World Commerce Pkwy, Saint Augustine, FL 32092",      lat: 29.889, lng: -81.342 },
+    // Georgia
+    { name: "Buc-ee's Brunswick",       address: "6900 Hwy 99, Brunswick, GA 31525",                        lat: 31.226, lng: -81.573 },
+    { name: "Buc-ee's Calhoun",         address: "601 Union Grove Rd SE, Adairsville, GA 30103",            lat: 34.487, lng: -84.939 },
+    { name: "Buc-ee's Warner Robins",   address: "7001 Russell Parkway, Fort Valley, GA 31030",             lat: 32.549, lng: -83.849 },
+    // Kentucky
+    { name: "Buc-ee's Richmond",        address: "1013 Buc-ee's Blvd, Richmond, KY 40475",                  lat: 37.748, lng: -84.296 },
+    { name: "Buc-ee's Smiths Grove",    address: "4001 Smiths Grove-Scottsville Rd, Smiths Grove, KY 42171", lat: 37.046, lng: -86.218 },
+    // Mississippi
+    { name: "Buc-ee's Harrison County", address: "8245 Firetower Road, Pass Christian, MS 39571",           lat: 30.319, lng: -89.248 },
+    // Missouri
+    { name: "Buc-ee's Springfield",     address: "3284 N Beaver Rd, Springfield, MO 65803",                 lat: 37.286, lng: -93.298 },
+    // Ohio (opening April 6 2026)
+    { name: "Buc-ee's Huber Heights",   address: "8000 State Route 235, Huber Heights, OH 45424",           lat: 39.861, lng: -84.122 },
+    // South Carolina
+    { name: "Buc-ee's Florence",        address: "3390 North Williston Road, Florence, SC 29506",           lat: 34.245, lng: -79.763 },
+    // Tennessee
+    { name: "Buc-ee's Crossville",      address: "2045 Genesis Road, Crossville, TN 38555",                 lat: 35.961, lng: -85.031 },
+    { name: "Buc-ee's Sevierville",     address: "170 Buc-ee's Blvd, Kodak, TN 37764",                      lat: 35.931, lng: -83.567 },
+    // Virginia
+    { name: "Buc-ee's Rockingham County", address: "6500 Buc-ee's Blvd, Mount Crawford, VA 22841",          lat: 38.354, lng: -78.937 },
+    // Texas
+    { name: "Buc-ee's Alvin",           address: "780 Hwy-35 N Byp, Alvin, TX 77511",                      lat: 29.395, lng: -95.248 },
+    { name: "Buc-ee's Amarillo",        address: "9900 East Interstate 40, Amarillo, TX 79118",             lat: 35.193, lng: -101.684 },
+    { name: "Buc-ee's Angleton",        address: "2299 E Mulberry St, Angleton, TX 77515",                  lat: 29.176, lng: -95.418 },
+    { name: "Buc-ee's Angleton North",  address: "931 Loop 274, Angleton, TX 77515",                        lat: 29.182, lng: -95.434 },
+    { name: "Buc-ee's Angleton West",   address: "2304 W Mulberry St, Angleton, TX 77515",                  lat: 29.168, lng: -95.452 },
+    { name: "Buc-ee's Bastrop",         address: "1700 Highway 71 East, Bastrop, TX 78602",                 lat: 30.107, lng: -97.297 },
+    { name: "Buc-ee's Baytown",         address: "4080 East Freeway, Baytown, TX 77521",                    lat: 29.753, lng: -94.981 },
+    { name: "Buc-ee's Brazoria",        address: "801 N Brooks, Brazoria, TX 77422",                        lat: 29.053, lng: -95.561 },
+    { name: "Buc-ee's Cypress",         address: "27106 US-290, Cypress, TX 77433",                         lat: 29.971, lng: -95.698 },
+    { name: "Buc-ee's Denton",          address: "2800 S Interstate 35 E, Denton, TX 76210",                lat: 33.142, lng: -97.144 },
+    { name: "Buc-ee's Eagle Lake",      address: "505 E Main St, Eagle Lake, TX 77434",                     lat: 29.590, lng: -96.328 },
+    { name: "Buc-ee's Ennis",           address: "1402 South IH-45, Ennis, TX 75119",                       lat: 32.295, lng: -96.628 },
+    { name: "Buc-ee's Fort Worth",      address: "15901 N Freeway, Fort Worth, TX 76177",                   lat: 32.981, lng: -97.309 },
+    { name: "Buc-ee's Freeport",        address: "4231 E. Hwy 332, Freeport, TX 77541",                     lat: 28.960, lng: -95.329 },
+    { name: "Buc-ee's Freeport Brazosport", address: "1002 N Brazosport Blvd, Freeport, TX 77541",         lat: 28.956, lng: -95.358 },
+    { name: "Buc-ee's Giddings",        address: "2375 E Austin St, Giddings, TX 78942",                    lat: 30.188, lng: -96.917 },
+    { name: "Buc-ee's Hillsboro",       address: "165 State Highway 77, Hillsboro, TX 76645",               lat: 31.974, lng: -97.129 },
+    { name: "Buc-ee's Katy",            address: "27700 Katy Fwy, Katy, TX 77494",                          lat: 29.783, lng: -95.837 },
+    { name: "Buc-ee's Lake Jackson",    address: "999 Oyster Creek Drive, Lake Jackson, TX 77566",          lat: 29.028, lng: -95.447 },
+    { name: "Buc-ee's Lake Jackson North", address: "101 N Hwy 2004, Lake Jackson, TX 77566",              lat: 29.036, lng: -95.443 },
+    { name: "Buc-ee's Lake Jackson West", address: "598 Hwy 332, Lake Jackson, TX 77566",                  lat: 29.010, lng: -95.471 },
+    { name: "Buc-ee's League City",     address: "1702 League City Pkwy, League City, TX 77573",            lat: 29.480, lng: -95.095 },
+    { name: "Buc-ee's Luling",          address: "10070 West IH 10, Luling, TX 77648",                      lat: 29.674, lng: -97.657 },
+    { name: "Buc-ee's Madisonville",    address: "205 IH-45 South, Madisonville, TX 77864",                 lat: 30.938, lng: -95.910 },
+    { name: "Buc-ee's Melissa",         address: "1550 Central Texas Expressway, Melissa, TX 75454",        lat: 33.281, lng: -96.568 },
+    { name: "Buc-ee's New Braunfels",   address: "2760 IH 35 North, New Braunfels, TX 78130",               lat: 29.691, lng: -98.079 },
+    { name: "Buc-ee's Pearland",        address: "2541 S Main St, Pearland, TX 77584",                      lat: 29.524, lng: -95.286 },
+    { name: "Buc-ee's Pearland Shadow Creek", address: "11151 Shadow Creek Pky, Pearland, TX 77584",       lat: 29.617, lng: -95.413 },
+    { name: "Buc-ee's Port Lavaca",     address: "2318 W Main, Port Lavaca, TX 77979",                      lat: 28.618, lng: -96.653 },
+    { name: "Buc-ee's Richmond TX",     address: "1243 Crabb River Rd, Richmond, TX 77469",                 lat: 29.543, lng: -95.747 },
+    { name: "Buc-ee's Royse City",      address: "5005 E Interstate 30, Royse City, TX 75189",              lat: 32.982, lng: -96.279 },
+    { name: "Buc-ee's Temple",          address: "4155 N General Bruce Dr, Temple, TX 76501",               lat: 31.115, lng: -97.370 },
+    { name: "Buc-ee's Terrell",         address: "506 W. IH 20, Terrell, TX 75160",                         lat: 32.738, lng: -96.285 },
+    { name: "Buc-ee's Texas City",      address: "6201 Gulf Fwy (IH 45), Texas City, TX 77591",             lat: 29.348, lng: -94.939 },
+    { name: "Buc-ee's Waller",          address: "40900 US Hwy 290 Bypass, Waller, TX 77484",               lat: 30.059, lng: -95.927 },
+    { name: "Buc-ee's Wharton",         address: "10484 US 59 Road, Wharton, TX 77488",                     lat: 29.269, lng: -96.066 },
+  ];
+
+  const client = await pool.connect();
   try {
-    // Fix ID 4: Winchester → Richmond, KY (1013 Buc-ee's Blvd, I-75)
-    const fixRichmond = await db.execute(sql`
-      UPDATE stops
-      SET name    = 'Buc-ee''s Richmond',
-          address = '1013 Buc-ee''s Blvd, Richmond, KY 40475',
-          lat     = 37.748,
-          lng     = -84.296
-      WHERE id = 4
-      RETURNING id, name, address, lat, lng
-    `);
+    // Step 1: Find all current Buc-ee's stop IDs
+    const existing = await client.query(
+      `SELECT id FROM stops WHERE name ILIKE 'buc-ee%' OR name ILIKE 'bucee%'`
+    );
+    const ids = existing.rows.map((r: any) => r.id);
 
-    // Remove ID 13: Florence, KY — no Buc-ee's exists there (confused with Florence, SC)
-    const deleteFlorence = await db.execute(sql`
-      DELETE FROM stops WHERE id = 13 RETURNING id, name
-    `);
-
-    // Add Smiths Grove, KY (4001 Smiths Grove-Scottsville Rd, I-65)
-    const existingSmithsGrove = await db.execute(sql`
-      SELECT id FROM stops WHERE ABS(lat - 37.046) < 0.05 AND ABS(lng - (-86.218)) < 0.05 LIMIT 1
-    `);
-    let addedSmithsGrove = null;
-    if (existingSmithsGrove.rows.length === 0) {
-      const ins = await db.execute(sql`
-        INSERT INTO stops (name, address, type, lat, lng, hours, highway, amenities)
-        VALUES (
-          'Buc-ee''s Smiths Grove',
-          '4001 Smiths Grove-Scottsville Rd, Smiths Grove, KY 42171',
-          'gas_station',
-          37.046,
-          -86.218,
-          null,
-          null,
-          ${JSON.stringify(["restrooms", "food", "gas", "parking", "shower"])}
-        )
-        RETURNING id, name, address, lat, lng
-      `);
-      addedSmithsGrove = ins.rows[0];
+    if (ids.length > 0) {
+      const idList = ids.join(",");
+      // Step 2: Delete ratings and reports first (no cascade), then stops
+      await client.query(`DELETE FROM ratings WHERE stop_id IN (${idList})`);
+      await client.query(`DELETE FROM reports WHERE stop_id IN (${idList})`);
+      // Photos cascade automatically
+      await client.query(`DELETE FROM stops WHERE id IN (${idList})`);
     }
 
-    const allBucees = await db.execute(sql`
-      SELECT id, name, address, lat, lng FROM stops
-      WHERE name ILIKE 'buc-ee%' OR name ILIKE 'bucee%'
-      ORDER BY id
-    `);
+    // Step 3: Insert complete official list
+    let inserted = 0;
+    for (const loc of LOCATIONS) {
+      await client.query(
+        `INSERT INTO stops (name, address, type, lat, lng, hours, highway, amenities)
+         VALUES ($1, $2, 'gas_station', $3, $4, null, null, $5)`,
+        [loc.name, loc.address, loc.lat, loc.lng, AMENITIES]
+      );
+      inserted++;
+    }
+
+    const total = await client.query(`SELECT count(*) FROM stops`);
 
     res.json({
-      message: "Buc-ee's KY fix applied",
-      fixedRichmond: fixRichmond.rows,
-      deletedFlorence: deleteFlorence.rows,
-      addedSmithsGrove,
-      allBucees: allBucees.rows,
+      message: "Buc-ee's fully replaced with official list",
+      removedOld: ids.length,
+      inserted,
+      totalStops: Number(total.rows[0].count),
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
