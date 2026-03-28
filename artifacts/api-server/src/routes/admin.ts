@@ -864,57 +864,61 @@ router.post("/admin/seed-gasstations", async (req, res): Promise<void> => {
     { name: "Pacific",     bbox: "32,-125,49,-117" },
   ];
 
-  const results: Record<string, { inserted: number; skipped: number; error?: string }> = {};
-  let totalInserted = 0;
+  // Respond immediately — seeding runs in the background on the server
+  res.json({ message: "Gas station seed started in background", chains: GAS_CHAINS.length, regions: REGIONS.length });
 
-  for (const region of REGIONS) {
-    try {
-      const query = `[out:json][timeout:30];(node["amenity"="fuel"]["brand"~"${brandRegex}"](${region.bbox});way["amenity"="fuel"]["brand"~"${brandRegex}"](${region.bbox}););out center;`;
-      const resp = await fetch(OVERPASS_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: "data=" + encodeURIComponent(query),
-      });
-      if (!resp.ok) throw new Error(`Overpass ${resp.status}`);
-      const data = await resp.json();
-      const els: any[] = data.elements || [];
+  // Background processing — intentionally not awaited
+  (async () => {
+    let totalInserted = 0;
+    const results: Record<string, { inserted: number; skipped: number; error?: string }> = {};
 
-      let inserted = 0, skipped = 0;
-      for (const el of els) {
-        const lat = el.lat ?? el.center?.lat;
-        const lng = el.lon ?? el.center?.lon;
-        const tags = el.tags || {};
-        const name = (tags.brand || tags.name || "").trim();
-        if (!name || !lat || !lng || lat < 24 || lat > 50 || lng < -126 || lng > -65) { skipped++; continue; }
+    for (const region of REGIONS) {
+      try {
+        const query = `[out:json][timeout:30];(node["amenity"="fuel"]["brand"~"${brandRegex}"](${region.bbox});way["amenity"="fuel"]["brand"~"${brandRegex}"](${region.bbox}););out center;`;
+        const resp = await fetch(OVERPASS_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: "data=" + encodeURIComponent(query),
+        });
+        if (!resp.ok) throw new Error(`Overpass ${resp.status}`);
+        const data = await resp.json();
+        const els: any[] = data.elements || [];
 
-        const nearby = await db.execute(sql`SELECT id FROM stops WHERE ABS(lat - ${lat}) < 0.003 AND ABS(lng - ${lng}) < 0.003 LIMIT 1`);
-        if (nearby.rows.length > 0) { skipped++; continue; }
+        let inserted = 0, skipped = 0;
+        for (const el of els) {
+          const lat = el.lat ?? el.center?.lat;
+          const lng = el.lon ?? el.center?.lon;
+          const tags = el.tags || {};
+          const name = (tags.brand || tags.name || "").trim();
+          if (!name || !lat || !lng || lat < 24 || lat > 50 || lng < -126 || lng > -65) { skipped++; continue; }
 
-        const city = tags["addr:city"] || "";
-        const state = tags["addr:state"] || "";
-        const street = tags["addr:housenumber"]
-          ? `${tags["addr:housenumber"]} ${tags["addr:street"] || ""}`.trim()
-          : (tags["addr:street"] || "");
-        const address = [street, city, state].filter(Boolean).join(", ") || name;
+          const nearby = await db.execute(sql`SELECT id FROM stops WHERE ABS(lat - ${lat}) < 0.003 AND ABS(lng - ${lng}) < 0.003 LIMIT 1`);
+          if (nearby.rows.length > 0) { skipped++; continue; }
 
-        await db.execute(sql`INSERT INTO stops (name, address, type, lat, lng, hours, highway, amenities) VALUES (${name}, ${address}, 'gas_station', ${lat}, ${lng}, ${tags.opening_hours || null}, null, ${JSON.stringify(["restrooms", "gas", "convenience"])})`);
-        inserted++;
+          const city = tags["addr:city"] || "";
+          const state = tags["addr:state"] || "";
+          const street = tags["addr:housenumber"]
+            ? `${tags["addr:housenumber"]} ${tags["addr:street"] || ""}`.trim()
+            : (tags["addr:street"] || "");
+          const address = [street, city, state].filter(Boolean).join(", ") || name;
+
+          await db.execute(sql`INSERT INTO stops (name, address, type, lat, lng, hours, highway, amenities) VALUES (${name}, ${address}, 'gas_station', ${lat}, ${lng}, ${tags.opening_hours || null}, null, ${JSON.stringify(["restrooms", "gas", "convenience"])})`);
+          inserted++;
+        }
+        results[region.name] = { inserted, skipped };
+        totalInserted += inserted;
+        console.log(`[seed-gasstations] ${region.name}: +${inserted} inserted, ${skipped} skipped`);
+      } catch (err: any) {
+        results[region.name] = { inserted: 0, skipped: 0, error: err.message };
+        console.error(`[seed-gasstations] ${region.name} error:`, err.message);
       }
-      results[region.name] = { inserted, skipped };
-      totalInserted += inserted;
-    } catch (err: any) {
-      results[region.name] = { inserted: 0, skipped: 0, error: err.message };
+      await new Promise((r) => setTimeout(r, 1200));
     }
-    await new Promise((r) => setTimeout(r, 1200));
-  }
 
-  const total = await db.execute(sql`SELECT count(*) FROM stops`);
-  res.json({
-    message: "Gas station seed complete",
-    totalInserted,
-    totalStops: Number((total.rows[0] as any).count),
-    regions: results,
-  });
+    const total = await db.execute(sql`SELECT count(*) FROM stops`);
+    console.log(`[seed-gasstations] COMPLETE — inserted ${totalInserted} gas stations, total stops now ${(total.rows[0] as any).count}`);
+    console.log("[seed-gasstations] results:", JSON.stringify(results));
+  })().catch((err) => console.error("[seed-gasstations] fatal error:", err));
 });
 
 export default router;
