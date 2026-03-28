@@ -328,4 +328,37 @@ router.post("/admin/seed-batch", async (req, res): Promise<void> => {
   });
 });
 
+/**
+ * POST /api/admin/fix-stop-types?key=<ADMIN_SEED_KEY>
+ *
+ * Corrects the `type` field for known commercial chains that were imported
+ * as the wrong type. Safe to re-run.
+ */
+router.post("/admin/fix-stop-types", async (req, res): Promise<void> => {
+  if (req.query.key !== ADMIN_KEY) {
+    res.status(401).json({ error: "Invalid key" });
+    return;
+  }
+  const fixes = await db.execute(sql`
+    UPDATE stops SET type = 'truck_stop'
+    WHERE type IN ('gas_station', 'other')
+      AND (
+        name ILIKE 'Love%'
+        OR name ILIKE 'Pilot%'
+        OR name ILIKE 'Flying J%'
+        OR name ILIKE 'TravelCenters%'
+        OR name ILIKE 'TA Travel%'
+        OR name ILIKE 'Petro %'
+        OR name ILIKE 'Pilot Travel%'
+        OR name ILIKE 'Buc-ee%'
+      )
+  `);
+  const total = await db.execute(sql`SELECT type, count(*) as cnt FROM stops GROUP BY type ORDER BY cnt DESC`);
+  res.json({
+    message: "Type fix complete",
+    updated: Number((fixes as any).rowCount ?? 0),
+    breakdown: (total.rows as any[]).map((r) => ({ type: r.type, count: Number(r.cnt) })),
+  });
+});
+
 export default router;
