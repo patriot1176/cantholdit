@@ -1013,4 +1013,64 @@ router.post("/admin/seed-gasstations-west", async (req, res): Promise<void> => {
   })().catch((err) => console.error("[seed-gasstations-west] fatal error:", err));
 });
 
+/**
+ * POST /api/admin/seed-gasstations-pacific?key=<ADMIN_SEED_KEY>
+ * Fills in the Pacific West Coast (CA, OR, WA) which was missed by rate limiting.
+ */
+router.post("/admin/seed-gasstations-pacific", async (req, res): Promise<void> => {
+  if (req.query.key !== ADMIN_KEY) { res.status(401).json({ error: "Invalid key" }); return; }
+
+  const GAS_CHAINS = [
+    "Wawa","Sheetz","QuikTrip","Kwik Trip","Kwik Star",
+    "Casey's General Store","Casey's","RaceTrac","Speedway",
+    "Maverik","Holiday Stationstores","Holiday","Kum & Go","7-Eleven","Circle K",
+  ];
+  const brandRegex = GAS_CHAINS.map((c) => c.replace(/'/g, "\\'")).join("|");
+
+  const REGIONS = [
+    { name: "SoCal",       bbox: "32,-120,35,-117" },
+    { name: "CentralCal",  bbox: "35,-122,38,-119" },
+    { name: "NorCal",      bbox: "38,-124,42,-120" },
+    { name: "Oregon",      bbox: "42,-124,46,-117" },
+    { name: "Washington",  bbox: "46,-125,49,-117" },
+    { name: "Nevada-AZ",   bbox: "33,-117,37,-112" },
+    { name: "Mountain-NW", bbox: "42,-117,49,-110" },
+  ];
+
+  res.json({ message: "Pacific gas seed started", regions: REGIONS.length });
+
+  (async () => {
+    let totalInserted = 0;
+    for (const region of REGIONS) {
+      try {
+        const query = `[out:json][timeout:45];(node["amenity"="fuel"]["brand"~"${brandRegex}"](${region.bbox});way["amenity"="fuel"]["brand"~"${brandRegex}"](${region.bbox}););out center;`;
+        const resp = await fetch(OVERPASS_URL, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "data=" + encodeURIComponent(query) });
+        if (!resp.ok) throw new Error(`Overpass ${resp.status}`);
+        const els: any[] = (await resp.json()).elements || [];
+        let inserted = 0, skipped = 0;
+        for (const el of els) {
+          const lat = el.lat ?? el.center?.lat, lng = el.lon ?? el.center?.lon;
+          const tags = el.tags || {};
+          const name = (tags.brand || tags.name || "").trim();
+          if (!name || !lat || !lng || lat < 24 || lat > 50 || lng < -126 || lng > -65) { skipped++; continue; }
+          const nearby = await db.execute(sql`SELECT id FROM stops WHERE ABS(lat - ${lat}) < 0.003 AND ABS(lng - ${lng}) < 0.003 LIMIT 1`);
+          if (nearby.rows.length > 0) { skipped++; continue; }
+          const city = tags["addr:city"] || "", state = tags["addr:state"] || "";
+          const street = tags["addr:housenumber"] ? `${tags["addr:housenumber"]} ${tags["addr:street"] || ""}`.trim() : (tags["addr:street"] || "");
+          const address = [street, city, state].filter(Boolean).join(", ") || name;
+          await db.execute(sql`INSERT INTO stops (name, address, type, lat, lng, hours, highway, amenities) VALUES (${name}, ${address}, 'gas_station', ${lat}, ${lng}, ${tags.opening_hours || null}, null, ${JSON.stringify(["restrooms", "gas", "convenience"])})`);
+          inserted++;
+        }
+        totalInserted += inserted;
+        console.log(`[seed-pacific] ${region.name}: +${inserted} inserted, ${skipped} skipped`);
+      } catch (err: any) {
+        console.error(`[seed-pacific] ${region.name} error:`, err.message);
+      }
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+    const total = await db.execute(sql`SELECT count(*) FROM stops`);
+    console.log(`[seed-pacific] COMPLETE — +${totalInserted}, total now ${(total.rows[0] as any).count}`);
+  })().catch((err) => console.error("[seed-pacific] fatal:", err));
+});
+
 export default router;
