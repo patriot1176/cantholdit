@@ -28,6 +28,35 @@ function getStopEmoji(type: string, name?: string): string {
 }
 
 const createMarkerIcon = (rating: number | null, type: string, name?: string) => {
+  const isBucees = name ? /buc-ee|bucee/i.test(name) : false;
+
+  // Buc-ee's gets their beaver mascot as the pin
+  if (isBucees) {
+    const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+    return L.divIcon({
+      className: "custom-marker",
+      html: `
+        <div style="
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
+          border: 3px solid #FFD700;
+          box-shadow: 0 4px 14px -2px rgba(0,0,0,0.45);
+          overflow: hidden;
+          background: #FFD700;
+          cursor: pointer;
+        ">
+          <img src="${base}/images/bucees-beaver.png"
+               style="width:100%;height:100%;object-fit:cover;display:block;"
+               alt="Buc-ee's" />
+        </div>
+      `,
+      iconSize: [44, 44],
+      iconAnchor: [22, 44],
+      popupAnchor: [0, -44],
+    });
+  }
+
   let color = "#94a3b8";
   let shadowColor = "rgba(148,163,184,0.4)";
 
