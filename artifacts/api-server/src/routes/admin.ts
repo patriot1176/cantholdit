@@ -606,7 +606,7 @@ router.post("/admin/seed-ohio", async (req, res): Promise<void> => {
     "McDonald's", "Subway", "Taco Bell", "Burger King", "Wendy's",
     "Chick-fil-A", "Arby's", "Sonic", "Dairy Queen", "Starbucks",
     "Dunkin'", "Panera Bread", "Popeyes", "KFC", "Hardee's",
-    "Bob Evans", "Skyline Chili", "Frisch's Big Boy",
+    "Bob Evans", "Skyline Chili",
   ];
   const brandRegex = CHAINS.map((c) => c.replace(/'/g, "\\'")).join("|");
 
