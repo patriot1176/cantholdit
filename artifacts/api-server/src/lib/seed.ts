@@ -300,8 +300,8 @@ export async function cleanupPlaceholders() {
       WHERE name = 'Culver''s ' AND type = 'fast_food'
     `);
 
-    // Trim any remaining trailing spaces in names
-    await db.execute(sql`UPDATE stops SET name = TRIM(name) WHERE name != TRIM(name)`);
+    // Trim leading/trailing spaces and stray quote characters from names
+    await db.execute(sql`UPDATE stops SET name = TRIM(BOTH '"' FROM TRIM(name)) WHERE name != TRIM(BOTH '"' FROM TRIM(name))`);
 
     const deleted = Number((del as any).rowCount ?? 0);
     if (deleted > 0) {

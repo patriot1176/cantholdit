@@ -60,6 +60,127 @@ router.post("/admin/seed-rest-areas", async (req, res): Promise<void> => {
   }
 });
 
+// ── Overpass helpers ───────────────────────────────────────────────────────
+
+const OVERPASS_URL = "https://overpass.kumi.systems/api/interpreter";
+
+/** Extract the first US highway reference found in an OSM name/ref string */
+function extractHighwayRef(tags: Record<string, string>): string | null {
+  const src = `${tags.name || ""} ${tags.ref || ""}`;
+  const m = src.match(/\b(I[-–]\d+[A-Z]?|US[-–]\d+|SR[-–]\d+|US\s+\d+|I\s+\d+)\b/i);
+  if (m) return m[1].replace(/\s+/, "-").replace("–", "-");
+  return null;
+}
+
+/** Build a human-readable address from OSM tags */
+function buildOverpassAddress(tags: Record<string, string>): string {
+  if (tags["addr:full"]) return tags["addr:full"];
+  if (tags["addr:street"]) return tags["addr:street"];
+  const hw = extractHighwayRef(tags);
+  if (hw) return `${hw} Rest Area`;
+  return "US Highway Rest Area";
+}
+
+async function queryOverpass(bbox: string): Promise<any[]> {
+  const query = `[out:json][timeout:30];(node["highway"="rest_area"](${bbox});way["highway"="rest_area"](${bbox}););out center;`;
+  const res = await fetch(OVERPASS_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "data=" + encodeURIComponent(query),
+  });
+  if (!res.ok) throw new Error(`Overpass ${res.status}`);
+  const data = await res.json();
+  return data.elements || [];
+}
+
+/**
+ * POST /api/admin/seed-overpass?key=<ADMIN_SEED_KEY>
+ *
+ * Queries the Overpass API (OpenStreetMap) for every highway rest_area node
+ * in the continental US, filtered to named stops only, and inserts any that
+ * aren't already within ~500 m of an existing stop.  Safe to re-run.
+ */
+router.post("/admin/seed-overpass", async (req, res): Promise<void> => {
+  if (req.query.key !== ADMIN_KEY) {
+    res.status(401).json({ error: "Invalid key" });
+    return;
+  }
+
+  // Continental US split into manageable bboxes (south,west,north,east)
+  const REGIONS = [
+    { name: "New England",    bbox: "41,-74,47,-67" },
+    { name: "Mid-Atlantic",   bbox: "37,-80,42,-73" },
+    { name: "Southeast",      bbox: "25,-88,37,-79" },
+    { name: "Appalachian",    bbox: "34,-90,37,-81" },
+    { name: "Great Lakes",    bbox: "38,-92,47,-82" },
+    { name: "Upper Midwest",  bbox: "40,-97,47,-89" },
+    { name: "Texas & Gulf",   bbox: "25,-107,37,-94" },
+    { name: "Great Plains",   bbox: "37,-105,46,-95" },
+    { name: "Mountain",       bbox: "37,-117,47,-103" },
+    { name: "Southwest",      bbox: "31,-114,37,-103" },
+    { name: "Pacific",        bbox: "32,-125,49,-117" },
+  ];
+
+  const results: Record<string, { inserted: number; skipped: number; error?: string }> = {};
+  let totalInserted = 0;
+  let totalSkipped = 0;
+
+  for (const region of REGIONS) {
+    try {
+      const elements = await queryOverpass(region.bbox);
+      let inserted = 0;
+      let skipped = 0;
+
+      for (const el of elements) {
+        const lat: number = el.lat ?? el.center?.lat;
+        const lng: number = el.lon ?? el.center?.lon;
+        const tags: Record<string, string> = el.tags || {};
+        const name = tags.name?.trim().replace(/^["']+|["']+$/g, "");
+
+        // Require a real name and valid continental-US coordinates
+        if (!name || name.length < 3) { skipped++; continue; }
+        if (!lat || !lng || lat < 24 || lat > 50 || lng < -126 || lng > -65) { skipped++; continue; }
+
+        // Skip if within ~500 m of an existing stop
+        const nearby = await db.execute(sql`
+          SELECT id FROM stops
+          WHERE ABS(lat - ${lat}) < 0.005
+            AND ABS(lng - ${lng}) < 0.005
+          LIMIT 1
+        `);
+        if (nearby.rows.length > 0) { skipped++; continue; }
+
+        const address = buildOverpassAddress(tags);
+        const highway = extractHighwayRef(tags);
+
+        await db.execute(sql`
+          INSERT INTO stops (name, address, type, lat, lng, hours, highway)
+          VALUES (${name}, ${address}, 'rest_area', ${lat}, ${lng}, null, ${highway})
+        `);
+        inserted++;
+      }
+
+      results[region.name] = { inserted, skipped };
+      totalInserted += inserted;
+      totalSkipped += skipped;
+    } catch (err: any) {
+      results[region.name] = { inserted: 0, skipped: 0, error: err.message };
+    }
+
+    // Brief pause to avoid overwhelming the Overpass API
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+
+  const total = await db.execute(sql`SELECT count(*) FROM stops`);
+  res.json({
+    message: "Overpass seed complete",
+    totalInserted,
+    totalSkipped,
+    totalStops: Number((total.rows[0] as any).count),
+    regions: results,
+  });
+});
+
 /**
  * POST /api/admin/cleanup-placeholders?key=<ADMIN_SEED_KEY>
  *
