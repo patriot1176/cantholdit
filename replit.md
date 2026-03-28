@@ -1,3 +1,8 @@
+# Can't Hold It — Community Restroom Finder
+
+## App Summary
+Road-tripper restroom finder with Leaflet map, community ratings, route planner, and gamification.
+
 # Workspace
 
 ## Overview

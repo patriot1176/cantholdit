@@ -7,6 +7,8 @@ import { ArrowLeft, MapPin, ShieldCheck, Sparkles, Wind, Lightbulb, Baby, PenLin
 import { formatDistanceToNow } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRef, useState, useEffect } from "react";
+import { useProfile } from "@/contexts/profile-context";
+import { getStopTier } from "@/lib/gamification";
 
 interface StopPhoto { id: number; stopId: number; objectPath: string; url: string; }
 
@@ -131,6 +133,8 @@ export default function StopDetail() {
     }
   };
 
+  const { awardPhoto } = useProfile();
+
   const handlePhotoUpload = async (file: File) => {
     setUploading(true);
     try {
@@ -147,6 +151,7 @@ export default function StopDetail() {
         body: JSON.stringify({ objectPath }),
       });
       queryClient.invalidateQueries({ queryKey: ["photos", id] });
+      awardPhoto();
     } catch (err) {
       console.error("Upload failed", err);
     } finally {
@@ -186,6 +191,7 @@ export default function StopDetail() {
   const hasRoyalFlush = badges.includes("royal_flush" as any);
   const hasBiohazard = badges.includes("biohazard" as any);
   const isVerified = stop.totalRatings >= 10;
+  const stopTier = getStopTier(stop.overallRating, stop.totalRatings);
 
   const categories = [
     { key: "cleanliness", label: "Cleanliness", icon: Sparkles, value: stop.cleanliness },
@@ -251,6 +257,11 @@ export default function StopDetail() {
                 </span>
                 {stop.highway && (
                   <span className="px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold rounded-full">🛣️ {stop.highway}</span>
+                )}
+                {stopTier && (
+                  <span className={`px-2.5 py-1 ${stopTier.bgColor} ${stopTier.textColor} border ${stopTier.borderColor} text-[10px] font-bold rounded-full`}>
+                    {stopTier.emoji} {stopTier.label}
+                  </span>
                 )}
                 <a
                   href={`https://www.google.com/maps/dir/?api=1&destination=${stop.lat},${stop.lng}`}

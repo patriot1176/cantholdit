@@ -9,6 +9,7 @@ import { ArrowLeft, Loader2, CheckCircle2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useProfile } from "@/contexts/profile-context";
 
 const ratingSchema = z.object({
   cleanliness: z.number().min(1).max(5),
@@ -28,6 +29,7 @@ export default function RateStop() {
   const id = parseInt(params?.id || "0", 10);
   const queryClient = useQueryClient();
   const [isSuccess, setIsSuccess] = useState(false);
+  const { awardRating } = useProfile();
 
   const { data: stop } = useGetStop(id, {
     query: { enabled: id > 0 }
@@ -37,6 +39,7 @@ export default function RateStop() {
     mutation: {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetStopQueryKey(id) });
+        awardRating(id, stop?.highway ?? null);
         setIsSuccess(true);
         setTimeout(() => {
           setLocation(`/stop/${id}`);

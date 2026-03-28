@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { readGpsFromSession, saveGpsToSession } from "@/hooks/use-location";
+import { useProfile } from "@/contexts/profile-context";
 
 const stopTypes = [
   { value: "rest_area", label: "🛣️ Rest Area", desc: "State/highway rest area" },
@@ -274,12 +275,15 @@ export default function AddStop() {
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
 
+  const { awardStop } = useProfile();
+
   const createStop = useCreateStop({
     mutation: {
       onSuccess: (data) => {
         queryClient.invalidateQueries({ queryKey: getGetStopsQueryKey() });
         setCreatedId(data.id);
         setIsSuccess(true);
+        awardStop(data.id);
       },
     },
   });

@@ -7,6 +7,7 @@ import { Search, Loader2, Map as MapIcon, List, Trophy, Plus, LocateFixed, Check
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
 import { FlushRating } from "@/components/flush-rating";
+import { getStopTier } from "@/lib/gamification";
 
 type ViewMode = "map" | "list" | "route" | "top";
 
@@ -737,6 +738,7 @@ export default function Home() {
               ) : (
                 filteredStops?.map((stop) => {
                   const isVerified = stop.totalRatings >= 10;
+                  const tier = getStopTier(stop.overallRating, stop.totalRatings);
                   return (
                     <Link key={stop.id} href={`/stop/${stop.id}`}>
                       <div className="bg-card rounded-2xl p-4 shadow-sm border border-border/50 hover:shadow-md hover:border-primary/30 transition-all active:scale-[0.98]">
@@ -756,6 +758,11 @@ export default function Home() {
                               </p>
                               {stop.highway && (
                                 <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded-full">🛣️ {stop.highway}</span>
+                              )}
+                              {tier && (
+                                <span className={`text-[10px] font-bold ${tier.bgColor} ${tier.textColor} border ${tier.borderColor} px-1.5 py-0.5 rounded-full`}>
+                                  {tier.emoji} {tier.label}
+                                </span>
                               )}
                             </div>
                           </div>
