@@ -273,6 +273,18 @@ export default function Home() {
     () => rawRouteStops === null ? null : routeSpaced ? applyRouteSpacing(rawRouteStops, MIN_SPACING_KM) : rawRouteStops,
     [rawRouteStops, routeSpaced]
   );
+  const displayedRouteStops = useMemo(() => {
+    if (!routeStops) return null;
+    return routeStops.filter((s) => {
+      if (filterType !== "all" && s.type !== filterType) return false;
+      if (filterMinRating > 0 && (s.overallRating === null || s.overallRating < filterMinRating)) return false;
+      if (filterHighway.trim()) {
+        const h = filterHighway.trim().toLowerCase();
+        if (!s.highway || !s.highway.toLowerCase().includes(h)) return false;
+      }
+      return true;
+    });
+  }, [routeStops, filterType, filterMinRating, filterHighway]);
   const [routeStopDistances, setRouteStopDistances] = useState<Record<number, number>>({});
   const [routeApproximate, setRouteApproximate] = useState(false);
   const [routeFromSuggestions, setRouteFromSuggestions] = useState<GeoResult[]>([]);
@@ -300,6 +312,8 @@ export default function Home() {
     setRawRouteStops(null);
     setRouteStopDistances({});
     setRouteApproximate(false);
+    setFilterHighway("");
+    setFilterType("all");
     try {
       const [start, end] = await Promise.all([geocodeOne(routeFrom), geocodeOne(routeTo)]);
       if (!start) { setRouteError(`Couldn't find "${routeFrom}" — try adding the state, e.g. "Nashville, TN".`); return; }
@@ -963,9 +977,16 @@ export default function Home() {
                 <>
                   <div className="flex items-center justify-between">
                     <h3 className="font-display font-bold text-base text-foreground">
-                      {routeSpaced && rawRouteStops && rawRouteStops.length !== routeStops.length
-                        ? `${routeStops.length} of ${rawRouteStops.length} stops`
-                        : `${routeStops.length} stop${routeStops.length !== 1 ? "s" : ""}`}{" "}
+                      {(() => {
+                        const total = routeStops?.length ?? 0;
+                        const shown = displayedRouteStops?.length ?? 0;
+                        const isFiltered = shown !== total;
+                        const label = isFiltered ? `${shown} of ${total} stops` :
+                          (routeSpaced && rawRouteStops && rawRouteStops.length !== total
+                            ? `${total} of ${rawRouteStops.length} stops`
+                            : `${total} stop${total !== 1 ? "s" : ""}`);
+                        return label;
+                      })()}{" "}
                       <span className="font-normal text-muted-foreground text-sm">
                         {routeApproximate ? "within 50 miles" : "within 15 miles"}
                       </span>
@@ -1008,43 +1029,61 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* Highway filter chips derived from route stops */}
-                  {(() => {
-                    const highways = [...new Set(routeStops.map((s) => s.highway).filter(Boolean) as string[])].sort();
-                    if (highways.length === 0) return null;
-                    return (
-                      <div className="flex flex-wrap gap-2">
-                        <span className="text-xs text-muted-foreground font-medium self-center">Filter by highway:</span>
-                        {highways.map((hw) => (
-                          <button
-                            key={hw}
-                            onClick={() => setFilterHighway(filterHighway === hw ? "" : hw)}
-                            className={`px-3 py-1 rounded-full text-xs font-bold transition-all border ${
-                              filterHighway === hw
-                                ? "bg-primary text-white border-primary shadow-sm"
-                                : "bg-white text-slate-700 border-slate-200 hover:border-primary/40"
-                            }`}
-                          >
-                            🛣️ {hw}
-                          </button>
-                        ))}
-                      </div>
-                    );
-                  })()}
+                  {/* Route-specific filter row: Rest Areas toggle + highway chips */}
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <button
+                      onClick={() => setFilterType(filterType === "rest_area" ? "all" : "rest_area")}
+                      className={`px-3 py-1 rounded-full text-xs font-bold transition-all border ${
+                        filterType === "rest_area"
+                          ? "bg-primary text-white border-primary shadow-sm"
+                          : "bg-white text-slate-700 border-slate-200 hover:border-primary/40"
+                      }`}
+                    >
+                      🛣️ Rest Areas only
+                    </button>
+                    {(() => {
+                      const highways = [...new Set((routeStops ?? []).map((s) => s.highway).filter(Boolean) as string[])].sort();
+                      if (highways.length === 0) return null;
+                      return (
+                        <>
+                          <span className="text-xs text-muted-foreground font-medium self-center">Highway:</span>
+                          {highways.map((hw) => (
+                            <button
+                              key={hw}
+                              onClick={() => setFilterHighway(filterHighway === hw ? "" : hw)}
+                              className={`px-3 py-1 rounded-full text-xs font-bold transition-all border ${
+                                filterHighway === hw
+                                  ? "bg-primary text-white border-primary shadow-sm"
+                                  : "bg-white text-slate-700 border-slate-200 hover:border-primary/40"
+                              }`}
+                            >
+                              🛣️ {hw}
+                            </button>
+                          ))}
+                        </>
+                      );
+                    })()}
+                  </div>
 
-                  {routeStops.length === 0 ? (
+                  {displayedRouteStops!.length === 0 ? (
                     <div className="text-center py-12 flex flex-col items-center gap-3">
                       <div className="text-5xl grayscale opacity-40">🌵</div>
-                      <p className="font-display font-bold text-foreground">No stops along this route</p>
-                      <p className="text-muted-foreground text-sm">Be the first to add one!</p>
-                      <Link href="/add-stop">
-                        <motion.div whileTap={{ scale: 0.97 }} className="bg-primary text-white px-5 py-3 rounded-xl font-bold text-sm flex items-center gap-2">
-                          <Plus className="w-4 h-4" /> Add a Stop
-                        </motion.div>
-                      </Link>
+                      <p className="font-display font-bold text-foreground">
+                        {filterType !== "all" || filterHighway ? "No stops match your filters" : "No stops along this route"}
+                      </p>
+                      <p className="text-muted-foreground text-sm">
+                        {filterType !== "all" || filterHighway ? "Try removing a filter above" : "Be the first to add one!"}
+                      </p>
+                      {!filterType && !filterHighway && (
+                        <Link href="/add-stop">
+                          <motion.div whileTap={{ scale: 0.97 }} className="bg-primary text-white px-5 py-3 rounded-xl font-bold text-sm flex items-center gap-2">
+                            <Plus className="w-4 h-4" /> Add a Stop
+                          </motion.div>
+                        </Link>
+                      )}
                     </div>
                   ) : (
-                    routeStops.map((stop, idx) => (
+                    displayedRouteStops!.map((stop, idx) => (
                       <Link key={stop.id} href={`/stop/${stop.id}`}>
                         <div className="bg-card rounded-2xl p-4 shadow-sm border border-border/50 hover:shadow-md hover:border-primary/30 transition-all active:scale-[0.98]">
                           <div className="flex justify-between items-start mb-1">
