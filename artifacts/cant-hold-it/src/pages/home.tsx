@@ -285,6 +285,42 @@ export default function Home() {
       return true;
     });
   }, [routeStops, filterType, filterMinRating, filterHighway]);
+
+  type RouteStop = NonNullable<typeof displayedRouteStops>[number];
+  type CollapsedStop = { primary: RouteStop; paired?: RouteStop };
+
+  function detectBound(stop: RouteStop): string {
+    const text = `${stop.name} ${stop.address}`.toUpperCase();
+    if (/\bNB\b/.test(text) || /NORTHBOUND/.test(text)) return "NB";
+    if (/\bSB\b/.test(text) || /SOUTHBOUND/.test(text)) return "SB";
+    if (/\bEB\b/.test(text) || /EASTBOUND/.test(text)) return "EB";
+    if (/\bWB\b/.test(text) || /WESTBOUND/.test(text)) return "WB";
+    return "";
+  }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const collapsedRouteStops = useMemo((): CollapsedStop[] | null => {
+    if (!displayedRouteStops) return null;
+    const result: CollapsedStop[] = [];
+    let i = 0;
+    while (i < displayedRouteStops.length) {
+      const stop = displayedRouteStops[i];
+      const next = displayedRouteStops[i + 1];
+      if (
+        next &&
+        stop.type === "rest_area" &&
+        next.type === "rest_area" &&
+        haversineKm(stop.lat, stop.lng, next.lat, next.lng) * 0.621371 < 2
+      ) {
+        result.push({ primary: stop, paired: next });
+        i += 2;
+      } else {
+        result.push({ primary: stop });
+        i++;
+      }
+    }
+    return result;
+  }, [displayedRouteStops]);
   const [routeStopDistances, setRouteStopDistances] = useState<Record<number, number>>({});
   const [routeApproximate, setRouteApproximate] = useState(false);
   const [routeFromSuggestions, setRouteFromSuggestions] = useState<GeoResult[]>([]);
@@ -979,7 +1015,7 @@ export default function Home() {
                     <h3 className="font-display font-bold text-base text-foreground">
                       {(() => {
                         const total = routeStops?.length ?? 0;
-                        const shown = displayedRouteStops?.length ?? 0;
+                        const shown = collapsedRouteStops?.length ?? 0;
                         const isFiltered = shown !== total;
                         const label = isFiltered ? `${shown} of ${total} stops` :
                           (routeSpaced && rawRouteStops && rawRouteStops.length !== total
@@ -1073,7 +1109,7 @@ export default function Home() {
                     })()}
                   </div>
 
-                  {displayedRouteStops!.length === 0 ? (
+                  {collapsedRouteStops!.length === 0 ? (
                     <div className="text-center py-12 flex flex-col items-center gap-3">
                       <div className="text-5xl grayscale opacity-40">🌵</div>
                       <p className="font-display font-bold text-foreground">
@@ -1091,18 +1127,27 @@ export default function Home() {
                       )}
                     </div>
                   ) : (
-                    displayedRouteStops!.map((stop, idx) => {
-                      const nextStop = displayedRouteStops![idx + 1];
+                    collapsedRouteStops!.map(({ primary: stop, paired }, idx) => {
+                      const nextEntry = collapsedRouteStops![idx + 1];
+                      const nextStop = nextEntry?.primary;
                       const distToNextMi = nextStop
                         ? haversineKm(stop.lat, stop.lng, nextStop.lat, nextStop.lng) * 0.621371
                         : null;
+                      const boundA = paired ? detectBound(stop) : "";
+                      const boundB = paired ? detectBound(paired) : "";
+                      const boundLabel = boundA && boundB ? `${boundA} / ${boundB}` : boundA || boundB || "";
                       return (
                         <Link key={stop.id} href={`/stop/${stop.id}`}>
                           <div className="bg-card rounded-2xl p-4 shadow-sm border border-border/50 hover:shadow-md hover:border-primary/30 transition-all active:scale-[0.98]">
                             <div className="flex justify-between items-start mb-1">
                               <div className="flex items-center gap-2 flex-1 pr-2 min-w-0">
                                 <span className="shrink-0 w-5 h-5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-black flex items-center justify-center">{idx + 1}</span>
-                                <h3 className="font-display font-bold text-base text-foreground leading-tight truncate">{stop.name}</h3>
+                                <div className="min-w-0">
+                                  <h3 className="font-display font-bold text-base text-foreground leading-tight truncate">{stop.name}</h3>
+                                  {paired && (
+                                    <p className="text-[11px] text-muted-foreground truncate">{paired.name}</p>
+                                  )}
+                                </div>
                               </div>
                               <div className="bg-slate-50 px-2 py-1 rounded-lg border border-slate-100 flex flex-col items-center shrink-0">
                                 <span className="text-sm font-bold text-foreground">{stop.overallRating?.toFixed(1) || "—"}</span>
@@ -1114,6 +1159,11 @@ export default function Home() {
                               {stop.highway && (
                                 <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded-full">🛣️ {stop.highway}</span>
                               )}
+                              {paired && (
+                                <span className="text-[10px] font-bold bg-violet-50 text-violet-700 border border-violet-200 px-1.5 py-0.5 rounded-full">
+                                  ↔ Both directions{boundLabel ? ` · ${boundLabel}` : ""}
+                                </span>
+                              )}
                               {routeStopDistances[stop.id] != null && (
                                 <span className="text-[10px] font-bold bg-green-50 text-green-700 border border-green-200 px-1.5 py-0.5 rounded-full">
                                   📍 {(routeStopDistances[stop.id] * 0.621371).toFixed(1)} mi off route
@@ -1121,16 +1171,14 @@ export default function Home() {
                               )}
                             </div>
                             <p className="text-sm text-foreground/70 truncate">{stop.address}</p>
+                            {paired && (
+                              <p className="text-xs text-muted-foreground/60 italic mt-0.5">Use the stop matching your travel direction</p>
+                            )}
                             {distToNextMi !== null && (
-                              <div className="mt-2 pt-2 border-t border-border/40 flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium flex-wrap">
+                              <div className="mt-2 pt-2 border-t border-border/40 flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium">
                                 <span>↓</span>
                                 <span className="font-bold text-slate-600">{distToNextMi.toFixed(0)} mi</span>
                                 <span>to next stop</span>
-                                {distToNextMi < 2 && stop.type === "rest_area" && nextStop?.type === "rest_area" && (
-                                  <span className="bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full font-bold text-[10px]">
-                                    ↔ opposite direction bound
-                                  </span>
-                                )}
                               </div>
                             )}
                           </div>
