@@ -122,6 +122,24 @@ function pointToSegmentKm(
   return haversineKm(pLat, pLng, closestLat, closestLng);
 }
 
+// Total driving distance of a polyline in km
+function polylineLengthKm(polyline: [number, number][]): number {
+  let total = 0;
+  for (let i = 0; i < polyline.length - 1; i++) {
+    total += haversineKm(polyline[i][0], polyline[i][1], polyline[i + 1][0], polyline[i + 1][1]);
+  }
+  return total;
+}
+
+// Buffer that scales with route length so short trips don't have an oversized search radius:
+//   < 30 km route  → ~5 mi (8 km) buffer
+//   ~80 km route   → ~7 mi (11 km) buffer
+//   120+ km route  → full 15 mi (24 km) buffer
+function adaptiveBufferKm(polyline: [number, number][]): number {
+  const routeKm = polylineLengthKm(polyline);
+  return Math.min(ROUTE_BUFFER_KM, Math.max(8, routeKm * 0.2));
+}
+
 // Filter stops within bufferKm of the polyline — returns stops sorted by travel order + per-stop distances
 function filterStopsNearRoute(
   stops: { id: number; lat: number; lng: number; [k: string]: any }[],
@@ -368,8 +386,9 @@ export default function Home() {
       if (!start) { setRouteError(`Couldn't find "${routeFrom}" — try adding the state, e.g. "Nashville, TN".`); return; }
       if (!end) { setRouteError(`Couldn't find "${routeTo}" — try adding the state, e.g. "Atlanta, GA".`); return; }
       const { polyline, approximate } = await fetchOsrmRoute(start, end);
-      // Use a wider 50-mile buffer for straight-line fallback to ensure coverage
-      const bufferKm = approximate ? 80.47 : ROUTE_BUFFER_KM;
+      // Short routes get a tighter buffer so stops going the wrong direction aren't included.
+      // Straight-line fallback gets a wider buffer to compensate for imprecision.
+      const bufferKm = approximate ? 80.47 : adaptiveBufferKm(polyline);
       const { sorted, distances } = filterStopsNearRoute(allStops, polyline, bufferKm);
       setRoutePolyline(polyline);
       setRawRouteStops(sorted);
