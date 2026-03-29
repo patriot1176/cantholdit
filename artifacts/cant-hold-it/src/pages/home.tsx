@@ -382,7 +382,7 @@ export default function Home() {
 
   // Leaderboard data derived from stops
   const royalFlushStops = [...(stops || [])]
-    .filter((s) => s.overallRating !== null && s.overallRating >= 4.0)
+    .filter((s) => s.overallRating !== null)
     .sort((a, b) => (b.overallRating ?? 0) - (a.overallRating ?? 0))
     .slice(0, 5);
 
