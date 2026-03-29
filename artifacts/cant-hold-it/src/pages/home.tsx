@@ -1001,11 +1001,15 @@ export default function Home() {
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground font-medium">Spacing:</span>
                     <button
-                      onClick={() => setRouteSpaced(true)}
+                      onClick={() => { if (filterType !== "rest_area") setRouteSpaced(true); }}
+                      disabled={filterType === "rest_area"}
+                      title={filterType === "rest_area" ? "Spacing disabled when filtering by type" : undefined}
                       className={`text-xs font-bold px-3 py-1.5 rounded-full transition-all border ${
-                        routeSpaced
-                          ? "bg-primary text-white border-primary shadow-sm"
-                          : "bg-white text-slate-600 border-slate-200 hover:border-primary/40"
+                        filterType === "rest_area"
+                          ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-50"
+                          : routeSpaced
+                            ? "bg-primary text-white border-primary shadow-sm"
+                            : "bg-white text-slate-600 border-slate-200 hover:border-primary/40"
                       }`}
                     >
                       ~30 mi apart
@@ -1032,7 +1036,11 @@ export default function Home() {
                   {/* Route-specific filter row: Rest Areas toggle + highway chips */}
                   <div className="flex flex-wrap gap-2 items-center">
                     <button
-                      onClick={() => setFilterType(filterType === "rest_area" ? "all" : "rest_area")}
+                      onClick={() => {
+                        const next = filterType === "rest_area" ? "all" : "rest_area";
+                        setFilterType(next);
+                        if (next === "rest_area") setRouteSpaced(false);
+                      }}
                       className={`px-3 py-1 rounded-full text-xs font-bold transition-all border ${
                         filterType === "rest_area"
                           ? "bg-primary text-white border-primary shadow-sm"
@@ -1083,34 +1091,47 @@ export default function Home() {
                       )}
                     </div>
                   ) : (
-                    displayedRouteStops!.map((stop, idx) => (
-                      <Link key={stop.id} href={`/stop/${stop.id}`}>
-                        <div className="bg-card rounded-2xl p-4 shadow-sm border border-border/50 hover:shadow-md hover:border-primary/30 transition-all active:scale-[0.98]">
-                          <div className="flex justify-between items-start mb-1">
-                            <div className="flex items-center gap-2 flex-1 pr-2 min-w-0">
-                              <span className="shrink-0 w-5 h-5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-black flex items-center justify-center">{idx + 1}</span>
-                              <h3 className="font-display font-bold text-base text-foreground leading-tight truncate">{stop.name}</h3>
+                    displayedRouteStops!.map((stop, idx) => {
+                      const nextStop = displayedRouteStops![idx + 1];
+                      const distToNextMi = nextStop
+                        ? haversineKm(stop.lat, stop.lng, nextStop.lat, nextStop.lng) * 0.621371
+                        : null;
+                      return (
+                        <Link key={stop.id} href={`/stop/${stop.id}`}>
+                          <div className="bg-card rounded-2xl p-4 shadow-sm border border-border/50 hover:shadow-md hover:border-primary/30 transition-all active:scale-[0.98]">
+                            <div className="flex justify-between items-start mb-1">
+                              <div className="flex items-center gap-2 flex-1 pr-2 min-w-0">
+                                <span className="shrink-0 w-5 h-5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-black flex items-center justify-center">{idx + 1}</span>
+                                <h3 className="font-display font-bold text-base text-foreground leading-tight truncate">{stop.name}</h3>
+                              </div>
+                              <div className="bg-slate-50 px-2 py-1 rounded-lg border border-slate-100 flex flex-col items-center shrink-0">
+                                <span className="text-sm font-bold text-foreground">{stop.overallRating?.toFixed(1) || "—"}</span>
+                                <span className="text-[10px] text-muted-foreground">{stop.totalRatings} rev</span>
+                              </div>
                             </div>
-                            <div className="bg-slate-50 px-2 py-1 rounded-lg border border-slate-100 flex flex-col items-center shrink-0">
-                              <span className="text-sm font-bold text-foreground">{stop.overallRating?.toFixed(1) || "—"}</span>
-                              <span className="text-[10px] text-muted-foreground">{stop.totalRatings} rev</span>
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">{stop.type.replace("_", " ")}</p>
+                              {stop.highway && (
+                                <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded-full">🛣️ {stop.highway}</span>
+                              )}
+                              {routeStopDistances[stop.id] != null && (
+                                <span className="text-[10px] font-bold bg-green-50 text-green-700 border border-green-200 px-1.5 py-0.5 rounded-full">
+                                  📍 {(routeStopDistances[stop.id] * 0.621371).toFixed(1)} mi off route
+                                </span>
+                              )}
                             </div>
-                          </div>
-                          <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">{stop.type.replace("_", " ")}</p>
-                            {stop.highway && (
-                              <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded-full">🛣️ {stop.highway}</span>
-                            )}
-                            {routeStopDistances[stop.id] != null && (
-                              <span className="text-[10px] font-bold bg-green-50 text-green-700 border border-green-200 px-1.5 py-0.5 rounded-full">
-                                📍 {(routeStopDistances[stop.id] * 0.621371).toFixed(1)} mi off route
-                              </span>
+                            <p className="text-sm text-foreground/70 truncate">{stop.address}</p>
+                            {distToNextMi !== null && (
+                              <div className="mt-2 pt-2 border-t border-border/40 flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium">
+                                <span>↓</span>
+                                <span className="font-bold text-slate-600">{distToNextMi.toFixed(0)} mi</span>
+                                <span>to next stop</span>
+                              </div>
                             )}
                           </div>
-                          <p className="text-sm text-foreground/70 truncate">{stop.address}</p>
-                        </div>
-                      </Link>
-                    ))
+                        </Link>
+                      );
+                    })
                   )}
                 </>
               )}
