@@ -1174,7 +1174,7 @@ export default function Home() {
                             {paired && (
                               <p className="text-xs text-muted-foreground/60 italic mt-0.5">Use the stop matching your travel direction</p>
                             )}
-                            {distToNextMi !== null && (
+                            {distToNextMi !== null && distToNextMi >= 1 && (
                               <div className="mt-2 pt-2 border-t border-border/40 flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium">
                                 <span>↓</span>
                                 <span className="font-bold text-slate-600">{distToNextMi.toFixed(0)} mi</span>
