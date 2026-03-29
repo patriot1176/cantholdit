@@ -54,10 +54,23 @@ const RADIUS_KM = 300;
 const ROUTE_BUFFER_KM = 24.14; // 15 miles
 const MIN_SPACING_KM = 48.28;  // 30 miles — minimum gap between consecutive route stops
 
-// Geocode a city/address to lat/lng (single best result)
-async function geocodeOne(q: string): Promise<{ lat: number; lng: number } | null> {
+// Geocode a city/address to lat/lng — picks the result closest to `bias` when available,
+// so GPS-verified users always get the correct state even for ambiguous city names.
+async function geocodeOne(
+  q: string,
+  bias?: { lat: number; lng: number } | null
+): Promise<{ lat: number; lng: number } | null> {
   const results = await geocodeSuggest(q);
   if (results.length === 0) return null;
+  if (bias) {
+    // Sort candidates by straight-line distance to the user's GPS position
+    const sorted = [...results].sort(
+      (a, b) =>
+        haversineKm(bias.lat, bias.lng, a.lat, a.lng) -
+        haversineKm(bias.lat, bias.lng, b.lat, b.lng)
+    );
+    return { lat: sorted[0].lat, lng: sorted[0].lng };
+  }
   return { lat: results[0].lat, lng: results[0].lng };
 }
 
@@ -351,7 +364,7 @@ export default function Home() {
     setFilterHighway("");
     setFilterType("all");
     try {
-      const [start, end] = await Promise.all([geocodeOne(routeFrom), geocodeOne(routeTo)]);
+      const [start, end] = await Promise.all([geocodeOne(routeFrom, location), geocodeOne(routeTo, location)]);
       if (!start) { setRouteError(`Couldn't find "${routeFrom}" — try adding the state, e.g. "Nashville, TN".`); return; }
       if (!end) { setRouteError(`Couldn't find "${routeTo}" — try adding the state, e.g. "Atlanta, GA".`); return; }
       const { polyline, approximate } = await fetchOsrmRoute(start, end);
@@ -367,7 +380,7 @@ export default function Home() {
     } finally {
       setRouteSearching(false);
     }
-  }, [routeFrom, routeTo, allStops]);
+  }, [routeFrom, routeTo, allStops, location]);
 
   // Debounced city suggestions for route "from" input — skip when value was set by selecting a suggestion
   useEffect(() => {
