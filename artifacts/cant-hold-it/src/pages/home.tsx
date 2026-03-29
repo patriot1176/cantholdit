@@ -1122,10 +1122,15 @@ export default function Home() {
                             </div>
                             <p className="text-sm text-foreground/70 truncate">{stop.address}</p>
                             {distToNextMi !== null && (
-                              <div className="mt-2 pt-2 border-t border-border/40 flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium">
+                              <div className="mt-2 pt-2 border-t border-border/40 flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium flex-wrap">
                                 <span>↓</span>
                                 <span className="font-bold text-slate-600">{distToNextMi.toFixed(0)} mi</span>
                                 <span>to next stop</span>
+                                {distToNextMi < 2 && stop.type === "rest_area" && nextStop?.type === "rest_area" && (
+                                  <span className="bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full font-bold text-[10px]">
+                                    ↔ opposite direction bound
+                                  </span>
+                                )}
                               </div>
                             )}
                           </div>
