@@ -34,6 +34,12 @@ async function geocodeSuggest(q: string): Promise<GeoResult[]> {
   }
 }
 
+// Extract 2-letter US state abbreviation from an address string
+function extractState(address: string): string {
+  const m = address.match(/,\s*([A-Z]{2})(?:\s+\d{5})?(?:\s*[-·,].*)?$/);
+  return m ? m[1] : "";
+}
+
 // Haversine formula — returns distance in km between two lat/lng points
 function haversineKm(
   lat1: number, lng1: number,
@@ -202,6 +208,7 @@ export default function Home() {
   const [filterType, setFilterType] = useState("all");
   const [filterMinRating, setFilterMinRating] = useState(0);
   const [filterHighway, setFilterHighway] = useState("");
+  const [filterState, setFilterState] = useState("");
 
   const locateMe = useCallback(() => {
     if (!("geolocation" in navigator)) {
@@ -448,7 +455,18 @@ export default function Home() {
     return allStops;
   })();
 
-  // Apply type + rating + highway filters on top of proximity-filtered stops
+  // Sorted list of state abbreviations found in the full dataset (for the state dropdown)
+  const availableStates = useMemo(() => {
+    if (!allStops) return [];
+    const seen = new Set<string>();
+    for (const s of allStops) {
+      const st = extractState(s.address);
+      if (st) seen.add(st);
+    }
+    return [...seen].sort();
+  }, [allStops]);
+
+  // Apply type + rating + highway + state filters on top of proximity-filtered stops
   const filteredStops = stops?.filter((s) => {
     if (filterType !== "all" && s.type !== filterType) return false;
     if (filterMinRating > 0 && (s.overallRating === null || s.overallRating < filterMinRating)) return false;
@@ -456,6 +474,7 @@ export default function Home() {
       const h = filterHighway.trim().toLowerCase();
       if (!s.highway || !s.highway.toLowerCase().includes(h)) return false;
     }
+    if (filterState && extractState(s.address) !== filterState) return false;
     return true;
   });
 
@@ -669,6 +688,33 @@ export default function Home() {
                 </button>
               )}
             </div>
+            {viewMode === "list" && availableStates.length > 0 && (
+              <>
+                <div className="w-px bg-white/40 shrink-0 self-stretch my-0.5" />
+                <div className={`shrink-0 flex items-center gap-1 backdrop-blur-sm border shadow-sm rounded-full px-2 py-1 focus-within:ring-2 focus-within:ring-primary/40 transition-colors ${filterState ? "bg-primary/10 border-primary/40" : "bg-white/90 border-white/50"}`}>
+                  <span className="text-xs leading-none select-none">📍</span>
+                  <select
+                    value={filterState}
+                    onChange={(e) => setFilterState(e.target.value)}
+                    className="bg-transparent outline-none text-xs font-bold text-slate-700 cursor-pointer max-w-[60px]"
+                  >
+                    <option value="">All</option>
+                    {availableStates.map((st) => (
+                      <option key={st} value={st}>{st}</option>
+                    ))}
+                  </select>
+                  {filterState && (
+                    <button
+                      type="button"
+                      onClick={() => setFilterState("")}
+                      className="text-slate-400 hover:text-slate-600 leading-none"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
 
