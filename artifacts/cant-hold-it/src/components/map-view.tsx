@@ -410,16 +410,25 @@ export function MapView({
 
   const markerPos = userMarkerPos || (userLocation ? [userLocation.lat, userLocation.lng] as [number, number] : null);
 
+  const btnRef = useCallback((el: HTMLButtonElement | null) => {
+    if (el) {
+      L.DomEvent.disableClickPropagation(el);
+      L.DomEvent.disableScrollPropagation(el);
+    }
+  }, []);
+
+  const panelRef = useCallback((el: HTMLDivElement | null) => {
+    if (el) {
+      L.DomEvent.disableClickPropagation(el);
+      L.DomEvent.disableScrollPropagation(el);
+    }
+  }, []);
+
   return (
     <MapErrorBoundary>
       <div className="relative w-full h-full bg-slate-100 z-0">
         <button
-          ref={useCallback((el: HTMLButtonElement | null) => {
-            if (el) {
-              L.DomEvent.disableClickPropagation(el);
-              L.DomEvent.disableScrollPropagation(el);
-            }
-          }, [])}
+          ref={btnRef}
           onClick={handleNearMeClick}
           disabled={locatingNearMe}
           style={{
@@ -468,12 +477,7 @@ export function MapView({
 
         {nearbyData && nearbyData.length > 0 && (
           <div
-            ref={useCallback((el: HTMLDivElement | null) => {
-              if (el) {
-                L.DomEvent.disableClickPropagation(el);
-                L.DomEvent.disableScrollPropagation(el);
-              }
-            }, [])}
+            ref={panelRef}
             style={{
               position: "absolute",
               bottom: 0,
