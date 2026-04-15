@@ -181,7 +181,7 @@ function buildPopupHtml(
 
   let distHtml = "";
   if (userLat !== null && userLng !== null) {
-    const d = haversineDistanceMiles(userLat, userLng, stop.lat, stop.lng);
+    const d = haversineDistanceMiles(userLat, userLng, Number(stop.lat), Number(stop.lng));
     distHtml = `<div style="font-size:12px;color:#3b82f6;font-weight:600;margin-bottom:6px">📍 ${formatDistance(d)} away</div>`;
   }
 
@@ -380,10 +380,12 @@ export function MapView({
               const PRIORITY_TYPES = ["rest_area", "truck_stop", "gas_station"];
               const nearby = stops
                 .filter((s) => PRIORITY_TYPES.includes(s.type))
-                .map((s) => ({
-                  ...s,
-                  distanceMiles: haversineDistanceMiles(lat, lng, s.lat, s.lng),
-                }))
+                .map((s) => {
+                  const sLat = Number(s.lat);
+                  const sLng = Number(s.lng);
+                  const dist = haversineDistanceMiles(lat, lng, sLat, sLng);
+                  return { ...s, distanceMiles: dist };
+                })
                 .sort((a, b) => a.distanceMiles - b.distanceMiles)
                 .slice(0, 10);
               setNearbyData(nearby);
