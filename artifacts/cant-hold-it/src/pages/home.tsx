@@ -640,12 +640,12 @@ export default function Home() {
         {viewMode !== "top" && (
           <div className="flex gap-1 overflow-x-auto no-scrollbar pb-0.5">
             {[
-              { value: "all", label: "All" },
+              { value: "all", label: "🚽 Bathrooms" },
               { value: "rest_area", label: "🛣️ Rest" },
               { value: "gas_station", label: "⛽ Gas" },
               { value: "truck_stop", label: "🚛 Truck" },
-              { value: "fast_food", label: "🍔 Food", dim: true },
-              { value: "walmart", label: "🛒 Walmart", dim: true },
+              { value: "fast_food", label: "🍔 Food" },
+              { value: "walmart", label: "🛒 Walmart" },
             ].map((chip) => (
               <button
                 key={chip.value}
