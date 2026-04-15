@@ -377,7 +377,9 @@ export function MapView({
           setTimeout(() => {
             try {
               if (mapRef.current) mapRef.current.invalidateSize();
+              const PRIORITY_TYPES = ["rest_area", "truck_stop", "gas_station"];
               const nearby = stops
+                .filter((s) => PRIORITY_TYPES.includes(s.type))
                 .map((s) => ({
                   ...s,
                   distanceMiles: haversineDistanceMiles(lat, lng, s.lat, s.lng),
