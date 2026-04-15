@@ -455,7 +455,7 @@ export function MapView({
                 return a.distanceMiles - b.distanceMiles;
               });
 
-              const nearby = [...boosted, ...others].slice(0, 8);
+              const nearby = [...boosted, ...others].slice(0, 7);
               setNearbyData(nearby);
             } catch (e) {
               console.error("Nearby calculation failed:", e);
