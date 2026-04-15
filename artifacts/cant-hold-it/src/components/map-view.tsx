@@ -394,19 +394,46 @@ export function MapView({
               }
 
               const INCLUDE_TYPES = ["rest_area", "truck_stop", "gas_station"];
+              const HWY_RE = /\b(I-?\d+|US-?\d+|SR-?\d+|Hwy\s*\d+|Interstate\s+\d+|Route\s+\d+)/i;
+              const DIR_RE = /\b(northbound|southbound|eastbound|westbound|[ns]b|[ew]b)\b/i;
+              const GENERIC_NAMES = ["WELCOME CENTER", "REST AREA", "REST STOP", "SERVICE PLAZA"];
+
+              function enrichName(s: Stop): string {
+                const upper = s.name.toUpperCase().trim();
+                if (!GENERIC_NAMES.some((g) => upper === g || upper.startsWith(g))) return s.name;
+                const hwy = s.address?.match(HWY_RE);
+                const dir = s.address?.match(DIR_RE);
+                const parts: string[] = [];
+                if (hwy) parts.push(hwy[1]);
+                parts.push(s.name);
+                if (dir) parts.push(`(${dir[1]})`);
+                return parts.join(" ");
+              }
+
+              function dedupeKey(s: Stop): string {
+                const latR = Number(s.lat).toFixed(2);
+                const lngR = Number(s.lng).toFixed(2);
+                return `${s.type}|${latR}|${lngR}`;
+              }
+
+              const seen = new Set<string>();
               const nearby = stops
                 .filter((s) => INCLUDE_TYPES.includes(s.type))
                 .map((s) => {
                   const dist = haversineDistanceMiles(lat, lng, Number(s.lat), Number(s.lng));
                   const tier = stopTier(s);
-                  return { ...s, distanceMiles: dist, _tier: tier };
+                  const displayName = enrichName(s);
+                  return { ...s, name: displayName, distanceMiles: dist, _tier: tier };
                 })
                 .filter((s) => s._tier <= 3)
-                .sort((a, b) => {
-                  if (a._tier !== b._tier) return a._tier - b._tier;
-                  return a.distanceMiles - b.distanceMiles;
+                .sort((a, b) => a.distanceMiles - b.distanceMiles)
+                .filter((s) => {
+                  const key = dedupeKey(s);
+                  if (seen.has(key)) return false;
+                  seen.add(key);
+                  return true;
                 })
-                .slice(0, 12);
+                .slice(0, 10);
               setNearbyData(nearby);
             } catch (e) {
               console.error("Nearby calculation failed:", e);
