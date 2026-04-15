@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -299,29 +299,10 @@ export function MapView({
   const mapRef = useRef<L.Map | null>(null);
   const [, navigate] = useWouterLocation();
   const [locatingNearMe, setLocatingNearMe] = useState(false);
-  const [gpsLocation, setGpsLocation] = useState<{
-    lat: number;
-    lng: number;
-  } | null>(null);
-  const [showNearbyPanel, setShowNearbyPanel] = useState(false);
+  const gpsLocRef = useRef<{ lat: number; lng: number } | null>(null);
+  const [nearbyData, setNearbyData] = useState<NearbyStop[] | null>(null);
 
-  const effectiveUserLoc = gpsLocation || userLocation;
-
-  const nearbyStops = useMemo<NearbyStop[]>(() => {
-    if (!effectiveUserLoc) return [];
-    return stops
-      .map((s) => ({
-        ...s,
-        distanceMiles: haversineDistanceMiles(
-          effectiveUserLoc.lat,
-          effectiveUserLoc.lng,
-          s.lat,
-          s.lng,
-        ),
-      }))
-      .sort((a, b) => a.distanceMiles - b.distanceMiles)
-      .slice(0, 10);
-  }, [stops, effectiveUserLoc]);
+  const effectiveUserLoc = gpsLocRef.current || userLocation;
 
   useEffect(() => {
     if (searchCenter && mapRef.current) {
@@ -348,18 +329,28 @@ export function MapView({
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude } = position.coords;
-        setGpsLocation({ lat: latitude, lng: longitude });
+        gpsLocRef.current = { lat: latitude, lng: longitude };
         setLocatingNearMe(false);
+
         const map = mapRef.current;
         if (map) {
           map.setView([latitude, longitude], 11);
-          setTimeout(() => {
-            map.invalidateSize();
-            setShowNearbyPanel(true);
-          }, 300);
-        } else {
-          setShowNearbyPanel(true);
         }
+
+        setTimeout(() => {
+          if (mapRef.current) mapRef.current.invalidateSize();
+          const loc = gpsLocRef.current;
+          if (loc) {
+            const nearby = stops
+              .map((s) => ({
+                ...s,
+                distanceMiles: haversineDistanceMiles(loc.lat, loc.lng, s.lat, s.lng),
+              }))
+              .sort((a, b) => a.distanceMiles - b.distanceMiles)
+              .slice(0, 10);
+            setNearbyData(nearby);
+          }
+        }, 500);
       },
       (error) => {
         let message = "Unable to get your location.";
@@ -373,7 +364,7 @@ export function MapView({
       },
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 },
     );
-  }, [locatingNearMe]);
+  }, [locatingNearMe, stops]);
 
   return (
     <div className="relative w-full h-full bg-slate-100 z-0">
@@ -430,7 +421,7 @@ export function MapView({
         )}
       </button>
 
-      {showNearbyPanel && nearbyStops.length > 0 && (
+      {nearbyData && nearbyData.length > 0 && (
         <div
           ref={useCallback((el: HTMLDivElement | null) => {
             if (el) {
@@ -468,7 +459,7 @@ export function MapView({
               📍 Nearby Stops
             </span>
             <button
-              onClick={() => setShowNearbyPanel(false)}
+              onClick={() => setNearbyData(null)}
               style={{
                 background: "none",
                 border: "none",
@@ -481,7 +472,7 @@ export function MapView({
               ✕
             </button>
           </div>
-          {nearbyStops.map((s) => (
+          {nearbyData.map((s) => (
             <div
               key={s.id}
               onClick={() => navigate(`/stop/${s.id}`)}
