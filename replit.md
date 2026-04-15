@@ -141,6 +141,24 @@ Community-rated restroom and rest stop finder for US road trippers. Tagline: "Be
 - `photos` — objectPath, FK to stops (cascade delete)
 - `stop_reports` — reportType enum (permanently_closed/temporarily_closed/wrong_location/wrong_info/other), optional comment, FK to stops
 
+### Admin Dashboard
+
+`/admin` — Password-protected admin page for managing stops.
+
+Features:
+- Search stops by name or address (paginated, 50 per page)
+- Delete individual stops
+- Run cleanup (removes French-Canadian placeholders)
+- Shows rating summary (average + count) per stop
+- Protected by client-side password gate + server-side `ADMIN_SEED_KEY`
+
+### Admin API Endpoints
+
+- `GET /api/admin/stops?key=...&search=...&page=...` — Paginated stop listing with search
+- `DELETE /api/admin/stops/:id?key=...` — Delete a stop
+- `DELETE /api/admin/ratings/:id?key=...` — Delete a rating
+- `POST /api/admin/cleanup-placeholders?key=...` — Remove placeholder/bad data
+
 ### Admin Seed Endpoint (HIFLD Import)
 
 `POST /api/admin/seed-rest-areas?key=<ADMIN_SEED_KEY>`

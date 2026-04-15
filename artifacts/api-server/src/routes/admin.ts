@@ -1078,6 +1078,63 @@ router.post("/admin/seed-gasstations-pacific", async (req, res): Promise<void> =
  * Body: { stops: Array<{ name, address, type, lat, lng, hours?, amenities? }> }
  * Inserts stops directly, deduplicating by proximity. Used when Overpass is rate-limited.
  */
+router.get("/admin/stops", async (req, res): Promise<void> => {
+  if (req.query.key !== ADMIN_KEY) { res.status(401).json({ error: "Invalid key" }); return; }
+  const search = (req.query.search as string || "").trim();
+  const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+  const limit = 50;
+  const offset = (page - 1) * limit;
+
+  let rows: any[];
+  let countResult: any;
+
+  try {
+    if (search) {
+      const pattern = `%${search}%`;
+      const result = await pool.query(
+        `SELECT s.id, s.name, s.type, s.address, s.lat, s.lng, s.created_at,
+          AVG((r.cleanliness + r.smell + r.paper_supply + r.lighting + r.safety + r.family_friendly) / 6.0) as overall_rating,
+          COUNT(r.id)::int as total_ratings
+        FROM stops s LEFT JOIN ratings r ON r.stop_id = s.id
+        WHERE s.name ILIKE $1 OR s.address ILIKE $2
+        GROUP BY s.id ORDER BY s.id DESC
+        LIMIT $3 OFFSET $4`,
+        [pattern, pattern, limit, offset]
+      );
+      rows = result.rows;
+      const countRes = await pool.query(
+        `SELECT count(*) FROM stops WHERE name ILIKE $1 OR address ILIKE $2`,
+        [pattern, pattern]
+      );
+      countResult = countRes.rows[0];
+    } else {
+      const result = await pool.query(
+        `SELECT s.id, s.name, s.type, s.address, s.lat, s.lng, s.created_at,
+          AVG((r.cleanliness + r.smell + r.paper_supply + r.lighting + r.safety + r.family_friendly) / 6.0) as overall_rating,
+          COUNT(r.id)::int as total_ratings
+        FROM stops s LEFT JOIN ratings r ON r.stop_id = s.id
+        GROUP BY s.id ORDER BY s.id DESC
+        LIMIT $1 OFFSET $2`,
+        [limit, offset]
+      );
+      rows = result.rows;
+      const countRes = await pool.query(`SELECT count(*) FROM stops`);
+      countResult = countRes.rows[0];
+    }
+  } catch (err) {
+    console.error("Admin stops query error:", err);
+    res.status(500).json({ error: "Query failed" });
+    return;
+  }
+
+  res.json({
+    stops: rows,
+    total: Number((countResult as any).count),
+    page,
+    totalPages: Math.ceil(Number((countResult as any).count) / limit),
+  });
+});
+
 router.delete("/admin/ratings/:id", async (req, res): Promise<void> => {
   if (req.query.key !== ADMIN_KEY) { res.status(401).json({ error: "Invalid key" }); return; }
   const id = parseInt(req.params.id, 10);
