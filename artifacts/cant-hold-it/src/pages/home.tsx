@@ -197,6 +197,8 @@ function applyRouteSpacing<T extends { id: number; lat: number; lng: number; ove
   return result;
 }
 
+const DEFAULT_TYPES = ["rest_area", "truck_stop", "gas_station"];
+
 export default function Home() {
   const { location } = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
@@ -314,7 +316,11 @@ export default function Home() {
   const displayedRouteStops = useMemo(() => {
     if (!routeStops) return null;
     return routeStops.filter((s) => {
-      if (filterType !== "all" && s.type !== filterType) return false;
+      if (filterType === "all") {
+        if (!DEFAULT_TYPES.includes(s.type)) return false;
+      } else if (s.type !== filterType) {
+        return false;
+      }
       if (filterMinRating > 0 && (s.overallRating === null || s.overallRating < filterMinRating)) return false;
       if (filterHighway.trim()) {
         const h = filterHighway.trim().toLowerCase();
@@ -466,9 +472,12 @@ export default function Home() {
     return [...seen].sort();
   }, [allStops]);
 
-  // Apply type + rating + highway + state filters on top of proximity-filtered stops
   const filteredStops = stops?.filter((s) => {
-    if (filterType !== "all" && s.type !== filterType) return false;
+    if (filterType === "all") {
+      if (!DEFAULT_TYPES.includes(s.type)) return false;
+    } else if (s.type !== filterType) {
+      return false;
+    }
     if (filterMinRating > 0 && (s.overallRating === null || s.overallRating < filterMinRating)) return false;
     if (filterHighway.trim()) {
       const h = filterHighway.trim().toLowerCase();
@@ -635,8 +644,8 @@ export default function Home() {
               { value: "rest_area", label: "🛣️ Rest" },
               { value: "gas_station", label: "⛽ Gas" },
               { value: "truck_stop", label: "🚛 Truck" },
-              { value: "fast_food", label: "🍔 Food" },
-              { value: "walmart", label: "🛒 Walmart" },
+              { value: "fast_food", label: "🍔 Food", dim: true },
+              { value: "walmart", label: "🛒 Walmart", dim: true },
             ].map((chip) => (
               <button
                 key={chip.value}
