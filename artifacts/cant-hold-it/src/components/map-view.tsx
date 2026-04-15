@@ -399,15 +399,19 @@ export function MapView({
               const GENERIC_NAMES = ["WELCOME CENTER", "REST AREA", "REST STOP", "SERVICE PLAZA"];
 
               function enrichName(s: Stop): string {
-                const upper = s.name.toUpperCase().trim();
-                if (!GENERIC_NAMES.some((g) => upper === g || upper.startsWith(g))) return s.name;
                 const hwy = s.address?.match(HWY_RE);
                 const dir = s.address?.match(DIR_RE);
-                const parts: string[] = [];
-                if (hwy) parts.push(hwy[1]);
-                parts.push(s.name);
-                if (dir) parts.push(`(${dir[1]})`);
-                return parts.join(" ");
+                const upper = s.name.toUpperCase().trim();
+                const isGeneric = GENERIC_NAMES.some((g) => upper === g || upper.startsWith(g));
+                if (isGeneric) {
+                  const label = upper.startsWith("WELCOME") ? "Rest Area" : s.name;
+                  const dirTag = dir ? ` ${dir[1].toUpperCase()}` : "";
+                  return hwy ? `${hwy[1]}${dirTag} ${label}` : `${label}${dirTag}`;
+                }
+                if (s.type === "truck_stop" && hwy && !s.name.match(HWY_RE)) {
+                  return `${s.name} - ${hwy[1]}`;
+                }
+                return s.name;
               }
 
               function dedupeKey(s: Stop): string {
@@ -433,7 +437,7 @@ export function MapView({
                   seen.add(key);
                   return true;
                 })
-                .slice(0, 10);
+                .slice(0, 8);
               setNearbyData(nearby);
             } catch (e) {
               console.error("Nearby calculation failed:", e);
@@ -579,7 +583,7 @@ export function MapView({
                 lineHeight: 1.3,
               }}
             >
-              Distances are straight-line estimates. Tap Directions for actual driving route.
+              Distances are approximate (straight-line). Tap Directions for real route.
             </div>
             {nearbyData.map((s) => (
               <div
