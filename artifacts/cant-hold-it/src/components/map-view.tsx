@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -194,6 +194,7 @@ export function MapView({
 }) {
   const mapRef = useRef<L.Map | null>(null);
   const [, navigate] = useWouterLocation();
+  const [locatingNearMe, setLocatingNearMe] = useState(false);
 
   useEffect(() => {
     if (searchCenter && mapRef.current) {
@@ -220,22 +221,50 @@ export function MapView({
             L.DomEvent.disableScrollPropagation(el);
           }
         }, [])}
-        onClick={() => handleNearMe(mapRef)}
+        onClick={() => {
+          if (locatingNearMe) return;
+          if (!navigator.geolocation) {
+            alert("Your browser does not support location services.");
+            return;
+          }
+          setLocatingNearMe(true);
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              const { latitude, longitude } = position.coords;
+              if (mapRef.current) {
+                mapRef.current.flyTo([latitude, longitude], 12, { duration: 1.5 });
+              }
+              setLocatingNearMe(false);
+            },
+            (error) => {
+              let message = "Unable to get your location.";
+              if (error.code === 1) message = "Location access was denied. Please allow it in your browser settings.";
+              if (error.code === 2) message = "Location information is unavailable.";
+              if (error.code === 3) message = "Location request timed out.";
+              alert(message);
+              setLocatingNearMe(false);
+            },
+            { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 }
+          );
+        }}
+        disabled={locatingNearMe}
         style={{
           position: "absolute",
           top: "170px",
           left: "50%",
           transform: "translateX(-50%)",
           zIndex: 2000,
-          backgroundColor: "#2563eb",
+          backgroundColor: locatingNearMe ? "#60a5fa" : "#2563eb",
           color: "white",
           padding: "18px 40px",
           borderRadius: "9999px",
           fontSize: "20px",
           fontWeight: "700",
-          boxShadow: "0 10px 30px rgba(37, 99, 235, 0.6)",
+          boxShadow: locatingNearMe
+            ? "0 10px 30px rgba(96, 165, 250, 0.4)"
+            : "0 10px 30px rgba(37, 99, 235, 0.6)",
           border: "none",
-          cursor: "pointer",
+          cursor: locatingNearMe ? "wait" : "pointer",
           display: "flex",
           alignItems: "center",
           gap: "12px",
@@ -243,9 +272,17 @@ export function MapView({
           justifyContent: "center",
           touchAction: "manipulation",
           WebkitTapHighlightColor: "rgba(37, 99, 235, 0.3)",
+          transition: "background-color 0.2s, box-shadow 0.2s",
         }}
       >
-        📍 Near Me
+        {locatingNearMe ? (
+          <>
+            <span style={{ display: "inline-block", animation: "spin 1s linear infinite" }}>⏳</span>
+            Locating…
+          </>
+        ) : (
+          <>📍 Near Me</>
+        )}
       </button>
 
       <MapContainer
