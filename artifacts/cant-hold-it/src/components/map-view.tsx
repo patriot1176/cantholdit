@@ -349,11 +349,17 @@ export function MapView({
       (position) => {
         const { latitude, longitude } = position.coords;
         setGpsLocation({ lat: latitude, lng: longitude });
-        if (mapRef.current) {
-          mapRef.current.flyTo([latitude, longitude], 11, { duration: 1.5 });
-        }
         setLocatingNearMe(false);
-        setShowNearbyPanel(true);
+        const map = mapRef.current;
+        if (map) {
+          map.setView([latitude, longitude], 11);
+          setTimeout(() => {
+            map.invalidateSize();
+            setShowNearbyPanel(true);
+          }, 300);
+        } else {
+          setShowNearbyPanel(true);
+        }
       },
       (error) => {
         let message = "Unable to get your location.";
