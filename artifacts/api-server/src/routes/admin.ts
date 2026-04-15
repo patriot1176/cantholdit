@@ -1150,7 +1150,8 @@ router.delete("/admin/stops/:id", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id, 10);
   if (!id || isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   await db.execute(sql`DELETE FROM ratings WHERE stop_id = ${id}`);
-  await db.execute(sql`DELETE FROM reports WHERE stop_id = ${id}`);
+  await db.execute(sql`DELETE FROM stop_reports WHERE stop_id = ${id}`);
+  await db.execute(sql`DELETE FROM photos WHERE stop_id = ${id}`);
   const result = await db.execute(sql`DELETE FROM stops WHERE id = ${id}`);
   const deleted = Number((result as any).rowCount ?? 0);
   if (deleted === 0) { res.status(404).json({ error: "Stop not found" }); return; }
