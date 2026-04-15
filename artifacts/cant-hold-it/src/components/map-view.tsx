@@ -403,10 +403,14 @@ export function MapView({
                 const dir = s.address?.match(DIR_RE);
                 const upper = s.name.toUpperCase().trim();
                 const isGeneric = GENERIC_NAMES.some((g) => upper === g || upper.startsWith(g));
-                if (isGeneric) {
-                  const label = upper.startsWith("WELCOME") ? "Rest Area" : s.name;
+                if (isGeneric || (s.type === "rest_area" && !hwy)) {
                   const dirTag = dir ? ` ${dir[1].toUpperCase()}` : "";
-                  return hwy ? `${hwy[1]}${dirTag} ${label}` : `${label}${dirTag}`;
+                  if (hwy) return `${hwy[1]}${dirTag} Rest Area`;
+                  return `Rest Area${dirTag}`;
+                }
+                if (s.type === "rest_area" && hwy && !s.name.match(HWY_RE)) {
+                  const dirTag = dir ? ` ${dir[1].toUpperCase()}` : "";
+                  return `${hwy[1]}${dirTag} ${s.name}`;
                 }
                 if (s.type === "truck_stop" && hwy && !s.name.match(HWY_RE)) {
                   return `${s.name} - ${hwy[1]}`;
@@ -421,7 +425,7 @@ export function MapView({
               }
 
               const seen = new Set<string>();
-              const nearby = stops
+              const candidates = stops
                 .filter((s) => INCLUDE_TYPES.includes(s.type))
                 .map((s) => {
                   const dist = haversineDistanceMiles(lat, lng, Number(s.lat), Number(s.lng));
@@ -430,14 +434,26 @@ export function MapView({
                   return { ...s, name: displayName, distanceMiles: dist, _tier: tier };
                 })
                 .filter((s) => s._tier <= 3)
-                .sort((a, b) => a.distanceMiles - b.distanceMiles)
+                .sort((a, b) => {
+                  const dA = Math.floor(a.distanceMiles / 5);
+                  const dB = Math.floor(b.distanceMiles / 5);
+                  if (dA !== dB) return dA - dB;
+                  const rA = a.overallRating ?? -1;
+                  const rB = b.overallRating ?? -1;
+                  if (rA !== rB) return rB - rA;
+                  return a.distanceMiles - b.distanceMiles;
+                })
                 .filter((s) => {
                   const key = dedupeKey(s);
                   if (seen.has(key)) return false;
                   seen.add(key);
                   return true;
-                })
-                .slice(0, 8);
+                });
+
+              const rated = candidates.filter((s) => s.overallRating !== null);
+              const nearby = rated.length >= 5
+                ? rated.slice(0, 8)
+                : candidates.slice(0, 8);
               setNearbyData(nearby);
             } catch (e) {
               console.error("Nearby calculation failed:", e);
@@ -583,7 +599,7 @@ export function MapView({
                 lineHeight: 1.3,
               }}
             >
-              Distances are approximate (straight-line). Tap Directions for real route.
+              Distances are approximate. Tap Directions for real route.
             </div>
             {nearbyData.map((s) => (
               <div
