@@ -330,15 +330,22 @@ export function MapView({
       (position) => {
         const { latitude, longitude } = position.coords;
         gpsLocRef.current = { lat: latitude, lng: longitude };
-        setLocatingNearMe(false);
 
         const map = mapRef.current;
         if (map) {
+          map.setMaxBounds(null as any);
           map.setView([latitude, longitude], 11);
         }
 
         setTimeout(() => {
-          if (mapRef.current) mapRef.current.invalidateSize();
+          setLocatingNearMe(false);
+        }, 100);
+
+        setTimeout(() => {
+          if (mapRef.current) {
+            mapRef.current.invalidateSize();
+            mapRef.current.setMaxBounds(US_BOUNDS);
+          }
           const loc = gpsLocRef.current;
           if (loc) {
             const nearby = stops
@@ -350,7 +357,7 @@ export function MapView({
               .slice(0, 10);
             setNearbyData(nearby);
           }
-        }, 500);
+        }, 600);
       },
       (error) => {
         let message = "Unable to get your location.";
