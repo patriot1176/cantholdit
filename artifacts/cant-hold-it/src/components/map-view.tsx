@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, Component, type ReactNode } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -11,6 +11,41 @@ import "leaflet.markercluster";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import { useLocation as useWouterLocation } from "wouter";
 import type { Stop } from "@workspace/api-client-react";
+
+class MapErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 32, textAlign: "center" }}>
+          <p style={{ fontSize: 18, fontWeight: 600 }}>Map failed to load</p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              marginTop: 12,
+              padding: "10px 24px",
+              background: "#3b82f6",
+              color: "white",
+              border: "none",
+              borderRadius: 8,
+              cursor: "pointer",
+              fontWeight: 600,
+            }}
+          >
+            Reload page
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const US_BOUNDS = L.latLngBounds(
   [24.396308, -125.001651],
@@ -132,7 +167,8 @@ const createMarkerIcon = (
 
 function buildPopupHtml(
   stop: Stop,
-  userLoc: { lat: number; lng: number } | null,
+  userLat: number | null,
+  userLng: number | null,
 ): string {
   const emoji = getStopEmoji(stop.type, stop.name);
   const typeName = stop.type.replace(/_/g, " ");
@@ -144,20 +180,13 @@ function buildPopupHtml(
       : rLabel;
 
   let distHtml = "";
-  if (userLoc) {
-    const d = haversineDistanceMiles(
-      userLoc.lat,
-      userLoc.lng,
-      stop.lat,
-      stop.lng,
-    );
+  if (userLat !== null && userLng !== null) {
+    const d = haversineDistanceMiles(userLat, userLng, stop.lat, stop.lng);
     distHtml = `<div style="font-size:12px;color:#3b82f6;font-weight:600;margin-bottom:6px">📍 ${formatDistance(d)} away</div>`;
   }
 
   const addressLine = stop.address || "";
-
   const amenities = getAmenityIcons(stop.type);
-
   const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${stop.lat},${stop.lng}`;
 
   return `
@@ -183,21 +212,15 @@ function buildPopupHtml(
 function ClusterLayer({
   stops,
   onNavigate,
-  userLocation,
 }: {
   stops: Stop[];
   onNavigate: (id: number) => void;
-  userLocation: { lat: number; lng: number } | null;
 }) {
   const map = useMap();
   const navigateRef = useRef(onNavigate);
-  const userLocRef = useRef(userLocation);
   useEffect(() => {
     navigateRef.current = onNavigate;
   }, [onNavigate]);
-  useEffect(() => {
-    userLocRef.current = userLocation;
-  }, [userLocation]);
 
   useEffect(() => {
     const group = (L as any).markerClusterGroup({
@@ -246,21 +269,25 @@ function ClusterLayer({
       (marker as any)._stopData = stop;
 
       marker.on("click", () => {
-        const html = buildPopupHtml(stop, userLocRef.current);
-        const el = L.DomUtil.create("div");
-        el.innerHTML = html;
-
-        el.querySelector('[data-action="details"]')?.addEventListener(
-          "click",
-          () => {
-            navigateRef.current(stop.id);
-            map.closePopup();
-          },
-        );
-
-        marker.unbindPopup();
-        marker.bindPopup(el, { maxWidth: 280, minWidth: 220 });
-        marker.openPopup();
+        try {
+          const userLat = window.__cantholdit_gps_lat ?? null;
+          const userLng = window.__cantholdit_gps_lng ?? null;
+          const html = buildPopupHtml(stop, userLat, userLng);
+          const el = L.DomUtil.create("div");
+          el.innerHTML = html;
+          el.querySelector('[data-action="details"]')?.addEventListener(
+            "click",
+            () => {
+              navigateRef.current(stop.id);
+              map.closePopup();
+            },
+          );
+          marker.unbindPopup();
+          marker.bindPopup(el, { maxWidth: 280, minWidth: 220 });
+          marker.openPopup();
+        } catch {
+          navigateRef.current(stop.id);
+        }
       });
 
       marker.bindPopup("Loading...", { maxWidth: 280, minWidth: 220 });
@@ -278,12 +305,16 @@ function ClusterLayer({
   return null;
 }
 
+declare global {
+  interface Window {
+    __cantholdit_gps_lat?: number;
+    __cantholdit_gps_lng?: number;
+  }
+}
+
 interface NearbyStop extends Stop {
   distanceMiles: number;
 }
-
-const mapBtnClass =
-  "bg-white w-12 h-12 rounded-full shadow-lg shadow-black/10 border border-border flex items-center justify-content-center hover:bg-slate-50 active:scale-95 transition-all";
 
 export function MapView({
   stops,
@@ -299,10 +330,10 @@ export function MapView({
   const mapRef = useRef<L.Map | null>(null);
   const [, navigate] = useWouterLocation();
   const [locatingNearMe, setLocatingNearMe] = useState(false);
-  const gpsLocRef = useRef<{ lat: number; lng: number } | null>(null);
   const [nearbyData, setNearbyData] = useState<NearbyStop[] | null>(null);
-
-  const effectiveUserLoc = gpsLocRef.current || userLocation;
+  const [userMarkerPos, setUserMarkerPos] = useState<[number, number] | null>(
+    null,
+  );
 
   useEffect(() => {
     if (searchCenter && mapRef.current) {
@@ -328,36 +359,40 @@ export function MapView({
     setLocatingNearMe(true);
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        const { latitude, longitude } = position.coords;
-        gpsLocRef.current = { lat: latitude, lng: longitude };
+        try {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
 
-        const map = mapRef.current;
-        if (map) {
-          map.setMaxBounds(null as any);
-          map.setView([latitude, longitude], 11);
-        }
+          window.__cantholdit_gps_lat = lat;
+          window.__cantholdit_gps_lng = lng;
 
-        setTimeout(() => {
+          const map = mapRef.current;
+          if (map) {
+            map.setView([lat, lng], 11);
+          }
+
           setLocatingNearMe(false);
-        }, 100);
+          setUserMarkerPos([lat, lng]);
 
-        setTimeout(() => {
-          if (mapRef.current) {
-            mapRef.current.invalidateSize();
-            mapRef.current.setMaxBounds(US_BOUNDS);
-          }
-          const loc = gpsLocRef.current;
-          if (loc) {
-            const nearby = stops
-              .map((s) => ({
-                ...s,
-                distanceMiles: haversineDistanceMiles(loc.lat, loc.lng, s.lat, s.lng),
-              }))
-              .sort((a, b) => a.distanceMiles - b.distanceMiles)
-              .slice(0, 10);
-            setNearbyData(nearby);
-          }
-        }, 600);
+          setTimeout(() => {
+            try {
+              if (mapRef.current) mapRef.current.invalidateSize();
+              const nearby = stops
+                .map((s) => ({
+                  ...s,
+                  distanceMiles: haversineDistanceMiles(lat, lng, s.lat, s.lng),
+                }))
+                .sort((a, b) => a.distanceMiles - b.distanceMiles)
+                .slice(0, 10);
+              setNearbyData(nearby);
+            } catch (e) {
+              console.error("Nearby calculation failed:", e);
+            }
+          }, 500);
+        } catch (e) {
+          console.error("Near Me failed:", e);
+          setLocatingNearMe(false);
+        }
       },
       (error) => {
         let message = "Unable to get your location.";
@@ -373,240 +408,235 @@ export function MapView({
     );
   }, [locatingNearMe, stops]);
 
-  return (
-    <div className="relative w-full h-full bg-slate-100 z-0">
-      <button
-        ref={useCallback((el: HTMLButtonElement | null) => {
-          if (el) {
-            L.DomEvent.disableClickPropagation(el);
-            L.DomEvent.disableScrollPropagation(el);
-          }
-        }, [])}
-        onClick={handleNearMeClick}
-        disabled={locatingNearMe}
-        style={{
-          position: "absolute",
-          top: "250px",
-          left: "50%",
-          transform: "translateX(-50%)",
-          zIndex: 2000,
-          backgroundColor: locatingNearMe ? "#60a5fa" : "#2563eb",
-          color: "white",
-          padding: "16px 36px",
-          borderRadius: "9999px",
-          fontSize: "18px",
-          fontWeight: "700",
-          boxShadow: locatingNearMe
-            ? "0 10px 30px rgba(96, 165, 250, 0.4)"
-            : "0 10px 30px rgba(37, 99, 235, 0.6)",
-          border: "none",
-          cursor: locatingNearMe ? "wait" : "pointer",
-          display: "flex",
-          alignItems: "center",
-          gap: "10px",
-          minWidth: "200px",
-          justifyContent: "center",
-          touchAction: "manipulation",
-          WebkitTapHighlightColor: "rgba(37, 99, 235, 0.3)",
-          transition: "background-color 0.2s, box-shadow 0.2s",
-        }}
-      >
-        {locatingNearMe ? (
-          <>
-            <span
-              style={{
-                display: "inline-block",
-                animation: "spin 1s linear infinite",
-              }}
-            >
-              ⏳
-            </span>
-            Locating…
-          </>
-        ) : (
-          <>📍 Near Me</>
-        )}
-      </button>
+  const markerPos = userMarkerPos || (userLocation ? [userLocation.lat, userLocation.lng] as [number, number] : null);
 
-      {nearbyData && nearbyData.length > 0 && (
-        <div
-          ref={useCallback((el: HTMLDivElement | null) => {
+  return (
+    <MapErrorBoundary>
+      <div className="relative w-full h-full bg-slate-100 z-0">
+        <button
+          ref={useCallback((el: HTMLButtonElement | null) => {
             if (el) {
               L.DomEvent.disableClickPropagation(el);
               L.DomEvent.disableScrollPropagation(el);
             }
           }, [])}
+          onClick={handleNearMeClick}
+          disabled={locatingNearMe}
           style={{
             position: "absolute",
-            bottom: 0,
-            left: 0,
-            right: 0,
+            top: "250px",
+            left: "50%",
+            transform: "translateX(-50%)",
             zIndex: 2000,
-            background: "white",
-            borderTopLeftRadius: "16px",
-            borderTopRightRadius: "16px",
-            boxShadow: "0 -4px 20px rgba(0,0,0,0.15)",
-            maxHeight: "40vh",
-            overflowY: "auto",
-            WebkitOverflowScrolling: "touch",
+            backgroundColor: locatingNearMe ? "#60a5fa" : "#2563eb",
+            color: "white",
+            padding: "16px 36px",
+            borderRadius: "9999px",
+            fontSize: "18px",
+            fontWeight: "700",
+            boxShadow: locatingNearMe
+              ? "0 10px 30px rgba(96, 165, 250, 0.4)"
+              : "0 10px 30px rgba(37, 99, 235, 0.6)",
+            border: "none",
+            cursor: locatingNearMe ? "wait" : "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            minWidth: "200px",
+            justifyContent: "center",
+            touchAction: "manipulation",
+            WebkitTapHighlightColor: "rgba(37, 99, 235, 0.3)",
+            transition: "background-color 0.2s, box-shadow 0.2s",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "12px 16px 4px",
-              borderBottom: "1px solid #e2e8f0",
-            }}
-          >
-            <span
-              style={{ fontWeight: 700, fontSize: "15px", color: "#1e293b" }}
-            >
-              📍 Nearby Stops
-            </span>
-            <button
-              onClick={() => setNearbyData(null)}
-              style={{
-                background: "none",
-                border: "none",
-                fontSize: "20px",
-                cursor: "pointer",
-                color: "#94a3b8",
-                padding: "4px 8px",
-              }}
-            >
-              ✕
-            </button>
-          </div>
-          {nearbyData.map((s) => (
-            <div
-              key={s.id}
-              onClick={() => navigate(`/stop/${s.id}`)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-                padding: "10px 16px",
-                borderBottom: "1px solid #f1f5f9",
-                cursor: "pointer",
-              }}
-            >
-              <span style={{ fontSize: "22px" }}>
-                {getStopEmoji(s.type, s.name)}
-              </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontWeight: 600,
-                    fontSize: "14px",
-                    color: "#1e293b",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
-                  {s.name}
-                </div>
-                <div style={{ fontSize: "12px", color: "#64748b" }}>
-                  {s.type.replace(/_/g, " ")} ·{" "}
-                  {s.overallRating !== null
-                    ? `${s.overallRating.toFixed(1)} ⭐`
-                    : "No rating"}
-                </div>
-              </div>
-              <div
+          {locatingNearMe ? (
+            <>
+              <span
                 style={{
-                  textAlign: "right",
-                  flexShrink: 0,
+                  display: "inline-block",
+                  animation: "spin 1s linear infinite",
                 }}
               >
-                <div
-                  style={{
-                    fontWeight: 700,
-                    fontSize: "14px",
-                    color: "#3b82f6",
-                  }}
-                >
-                  {formatDistance(s.distanceMiles)}
-                </div>
-                <a
-                  href={`https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  style={{
-                    fontSize: "11px",
-                    color: "#22c55e",
-                    fontWeight: 600,
-                  }}
-                >
-                  Directions →
-                </a>
-              </div>
+                ⏳
+              </span>
+              Locating…
+            </>
+          ) : (
+            <>📍 Near Me</>
+          )}
+        </button>
+
+        {nearbyData && nearbyData.length > 0 && (
+          <div
+            ref={useCallback((el: HTMLDivElement | null) => {
+              if (el) {
+                L.DomEvent.disableClickPropagation(el);
+                L.DomEvent.disableScrollPropagation(el);
+              }
+            }, [])}
+            style={{
+              position: "absolute",
+              bottom: 0,
+              left: 0,
+              right: 0,
+              zIndex: 2000,
+              background: "white",
+              borderTopLeftRadius: "16px",
+              borderTopRightRadius: "16px",
+              boxShadow: "0 -4px 20px rgba(0,0,0,0.15)",
+              maxHeight: "40vh",
+              overflowY: "auto",
+              WebkitOverflowScrolling: "touch",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "12px 16px 4px",
+                borderBottom: "1px solid #e2e8f0",
+              }}
+            >
+              <span
+                style={{ fontWeight: 700, fontSize: "15px", color: "#1e293b" }}
+              >
+                📍 Nearby Stops
+              </span>
+              <button
+                onClick={() => setNearbyData(null)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  fontSize: "20px",
+                  cursor: "pointer",
+                  color: "#94a3b8",
+                  padding: "4px 8px",
+                }}
+              >
+                ✕
+              </button>
             </div>
-          ))}
+            {nearbyData.map((s) => (
+              <div
+                key={s.id}
+                onClick={() => navigate(`/stop/${s.id}`)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  padding: "10px 16px",
+                  borderBottom: "1px solid #f1f5f9",
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ fontSize: "22px" }}>
+                  {getStopEmoji(s.type, s.name)}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      fontSize: "14px",
+                      color: "#1e293b",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {s.name}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#64748b" }}>
+                    {s.type.replace(/_/g, " ")} ·{" "}
+                    {s.overallRating !== null
+                      ? `${s.overallRating.toFixed(1)} ⭐`
+                      : "No rating"}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      fontSize: "14px",
+                      color: "#3b82f6",
+                    }}
+                  >
+                    {formatDistance(s.distanceMiles)}
+                  </div>
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      fontSize: "11px",
+                      color: "#22c55e",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Directions →
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <MapContainer
+          ref={mapRef}
+          center={US_CENTER}
+          zoom={US_ZOOM}
+          minZoom={4}
+          maxBounds={US_BOUNDS}
+          maxBoundsViscosity={0.8}
+          zoomControl={false}
+          className="w-full h-full"
+        >
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+          />
+
+          {markerPos && (
+            <Marker
+              position={markerPos}
+              icon={L.divIcon({
+                className: "user-marker",
+                html: `<div style="width:16px;height:16px;background:#3b82f6;border-radius:50%;border:3px solid white;box-shadow:0 0 0 5px rgba(59,130,246,0.25)"></div>`,
+                iconSize: [16, 16],
+                iconAnchor: [8, 8],
+              })}
+            />
+          )}
+
+          {routePolyline && routePolyline.length > 1 && (
+            <Polyline
+              positions={routePolyline}
+              pathOptions={{ color: "#3b82f6", weight: 4, opacity: 0.75 }}
+            />
+          )}
+
+          <ClusterLayer
+            stops={stops}
+            onNavigate={(id) => navigate(`/stop/${id}`)}
+          />
+        </MapContainer>
+
+        <div className="absolute bottom-6 right-4 z-[400] flex flex-col gap-2">
+          <button
+            onClick={() => mapRef.current?.zoomIn(1)}
+            className="bg-white w-12 h-12 rounded-full shadow-lg shadow-black/10 border border-border flex items-center justify-center hover:bg-slate-50 active:scale-95 transition-all"
+          >
+            +
+          </button>
+          <button
+            onClick={() => mapRef.current?.zoomOut(1)}
+            className="bg-white w-12 h-12 rounded-full shadow-lg shadow-black/10 border border-border flex items-center justify-center hover:bg-slate-50 active:scale-95 transition-all"
+          >
+            −
+          </button>
         </div>
-      )}
-
-      <MapContainer
-        ref={mapRef}
-        center={US_CENTER}
-        zoom={US_ZOOM}
-        minZoom={4}
-        maxBounds={US_BOUNDS}
-        maxBoundsViscosity={1.0}
-        zoomControl={false}
-        className="w-full h-full"
-      >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-        />
-
-        {(effectiveUserLoc || userLocation) && (
-          <Marker
-            position={[
-              (effectiveUserLoc || userLocation)!.lat,
-              (effectiveUserLoc || userLocation)!.lng,
-            ]}
-            icon={L.divIcon({
-              className: "user-marker",
-              html: `<div style="width:16px;height:16px;background:#3b82f6;border-radius:50%;border:3px solid white;box-shadow:0 0 0 5px rgba(59,130,246,0.25)"></div>`,
-              iconSize: [16, 16],
-              iconAnchor: [8, 8],
-            })}
-          />
-        )}
-
-        {routePolyline && routePolyline.length > 1 && (
-          <Polyline
-            positions={routePolyline}
-            pathOptions={{ color: "#3b82f6", weight: 4, opacity: 0.75 }}
-          />
-        )}
-
-        <ClusterLayer
-          stops={stops}
-          onNavigate={(id) => navigate(`/stop/${id}`)}
-          userLocation={effectiveUserLoc}
-        />
-      </MapContainer>
-
-      <div className="absolute bottom-6 right-4 z-[400] flex flex-col gap-2">
-        <button
-          onClick={() => mapRef.current?.zoomIn(1)}
-          className={mapBtnClass}
-        >
-          +
-        </button>
-        <button
-          onClick={() => mapRef.current?.zoomOut(1)}
-          className={mapBtnClass}
-        >
-          −
-        </button>
       </div>
-    </div>
+    </MapErrorBoundary>
   );
 }
