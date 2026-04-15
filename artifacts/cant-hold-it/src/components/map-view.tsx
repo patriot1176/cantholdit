@@ -386,10 +386,10 @@ export function MapView({
                 if (s.type === "rest_area") return 1;
                 if (s.type === "truck_stop" || TRAVEL_CENTER.test(s.name)) return 2;
                 if (s.type === "gas_station" && (s.totalRatings > 0 || dist < 5)) return 3;
-                return 99;
+                if (s.type === "gas_station") return 4;
+                return 5;
               }
 
-              const INCLUDE_TYPES = ["rest_area", "truck_stop", "gas_station"];
               const HWY_RE = /\b(I-?\d+|US-?\d+|SR-?\d+|Hwy\s*\d+|Interstate\s+\d+|Route\s+\d+)/i;
               const DIR_RE = /\b(northbound|southbound|eastbound|westbound|[ns]b|[ew]b)\b/i;
               const GENERIC_NAMES = ["WELCOME CENTER", "REST AREA", "REST STOP", "SERVICE PLAZA"];
@@ -422,14 +422,13 @@ export function MapView({
 
               const seen = new Set<string>();
               const candidates = stops
-                .filter((s) => INCLUDE_TYPES.includes(s.type))
                 .map((s) => {
                   const dist = haversineDistanceMiles(lat, lng, Number(s.lat), Number(s.lng));
                   const bucket = stopBucket(s, dist);
                   const displayName = enrichName(s);
                   return { ...s, name: displayName, distanceMiles: dist, _bucket: bucket };
                 })
-                .filter((s) => s._bucket < 99 && s.distanceMiles <= 35)
+                .filter((s) => s.distanceMiles <= 35)
                 .sort((a, b) => a.distanceMiles - b.distanceMiles)
                 .filter((s) => {
                   const key = dedupeKey(s);
@@ -439,9 +438,9 @@ export function MapView({
                 });
 
               const topTier = candidates.filter((s) => s._bucket <= 2).sort((a, b) => a.distanceMiles - b.distanceMiles);
-              const gasStations = candidates.filter((s) => s._bucket === 3).sort((a, b) => a.distanceMiles - b.distanceMiles);
+              const rest = candidates.filter((s) => s._bucket > 2).sort((a, b) => a.distanceMiles - b.distanceMiles);
 
-              const nearby = [...topTier, ...gasStations].slice(0, 7);
+              const nearby = [...topTier, ...rest].slice(0, 7);
               setNearbyData(nearby);
             } catch (e) {
               console.error("Nearby calculation failed:", e);
