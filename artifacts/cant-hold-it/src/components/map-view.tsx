@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -214,8 +214,13 @@ export function MapView({
     <div className="relative w-full h-full bg-slate-100 z-0">
       {/* BIG NEAR ME BUTTON - Moved below category chips */}
       <button
+        ref={useCallback((el: HTMLButtonElement | null) => {
+          if (el) {
+            L.DomEvent.disableClickPropagation(el);
+            L.DomEvent.disableScrollPropagation(el);
+          }
+        }, [])}
         onClick={() => handleNearMe(mapRef)}
-        onTouchEnd={(e) => { e.preventDefault(); handleNearMe(mapRef); }}
         style={{
           position: "absolute",
           top: "170px",
