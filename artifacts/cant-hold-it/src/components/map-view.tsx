@@ -432,7 +432,7 @@ export function MapView({
                   const displayName = enrichName(s);
                   return { ...s, name: displayName, distanceMiles: dist, _prio: prio };
                 })
-                .filter((s) => s._prio < 99)
+                .filter((s) => s._prio < 99 && s.distanceMiles <= 35)
                 .sort((a, b) => a.distanceMiles - b.distanceMiles)
                 .filter((s) => {
                   const key = dedupeKey(s);
