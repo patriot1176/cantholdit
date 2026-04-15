@@ -72,10 +72,11 @@ function haversineDistanceMiles(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function formatDistance(miles: number): string {
-  if (miles < 0.1) return "< 0.1 mi";
-  if (miles < 10) return `${miles.toFixed(1)} mi`;
-  return `${Math.round(miles)} mi`;
+function formatDistance(miles: number, approximate = false): string {
+  const prefix = approximate ? "~" : "";
+  if (miles < 0.1) return `${prefix}< 0.1 mi`;
+  if (miles < 10) return `${prefix}${miles.toFixed(1)} mi`;
+  return `${prefix}${Math.round(miles)} mi`;
 }
 
 function getStopEmoji(type: string, name?: string): string {
@@ -543,6 +544,16 @@ export function MapView({
                 ✕
               </button>
             </div>
+            <div
+              style={{
+                fontSize: "11px",
+                color: "#94a3b8",
+                padding: "4px 16px 6px",
+                lineHeight: 1.3,
+              }}
+            >
+              Distances are straight-line estimates. Tap Directions for actual driving route.
+            </div>
             {nearbyData.map((s) => (
               <div
                 key={s.id}
@@ -592,7 +603,7 @@ export function MapView({
                       color: "#3b82f6",
                     }}
                   >
-                    {formatDistance(s.distanceMiles)}
+                    {formatDistance(s.distanceMiles, true)}
                   </div>
                   <a
                     href={`https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}`}
