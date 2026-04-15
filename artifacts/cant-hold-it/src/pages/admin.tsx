@@ -1,11 +1,12 @@
 import { useState, useCallback } from "react";
 
-const ADMIN_KEY = "cant-hold-it-seed";
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+let _adminKey = "";
 
 function api(path: string, opts?: RequestInit) {
   const sep = path.includes("?") ? "&" : "?";
-  return fetch(`${API_BASE}${path}${sep}key=${ADMIN_KEY}`, {
+  return fetch(`${API_BASE}${path}${sep}key=${encodeURIComponent(_adminKey)}`, {
     ...opts,
     headers: { "Content-Type": "application/json", ...opts?.headers },
   });
@@ -87,7 +88,23 @@ export default function Admin() {
     return (
       <div style={{ maxWidth: 400, margin: "80px auto", padding: 24, fontFamily: "system-ui" }}>
         <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 16 }}>Admin Login</h2>
-        <form onSubmit={(e) => { e.preventDefault(); if (password === ADMIN_KEY) { setAuthed(true); } else { setMessage("Wrong password"); } }}>
+        <form onSubmit={async (e) => {
+          e.preventDefault();
+          setMessage("");
+          _adminKey = password;
+          try {
+            const res = await fetch(`${API_BASE}/api/admin/stops?key=${encodeURIComponent(password)}&page=1`);
+            if (res.ok) {
+              setAuthed(true);
+            } else {
+              _adminKey = "";
+              setMessage("Wrong password");
+            }
+          } catch {
+            _adminKey = "";
+            setMessage("Connection error — try again");
+          }
+        }}>
           <input
             type="password"
             value={password}
