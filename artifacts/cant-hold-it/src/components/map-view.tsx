@@ -215,9 +215,10 @@ export function MapView({
       {/* BIG NEAR ME BUTTON - Moved below category chips */}
       <button
         onClick={() => handleNearMe(mapRef)}
+        onTouchEnd={(e) => { e.preventDefault(); handleNearMe(mapRef); }}
         style={{
           position: "absolute",
-          top: "170px", // Moved down below the filter chips
+          top: "170px",
           left: "50%",
           transform: "translateX(-50%)",
           zIndex: 2000,
@@ -235,6 +236,8 @@ export function MapView({
           gap: "12px",
           minWidth: "200px",
           justifyContent: "center",
+          touchAction: "manipulation",
+          WebkitTapHighlightColor: "rgba(37, 99, 235, 0.3)",
         }}
       >
         📍 Near Me
