@@ -377,17 +377,35 @@ export function MapView({
           setTimeout(() => {
             try {
               if (mapRef.current) mapRef.current.invalidateSize();
-              const PRIORITY_TYPES = ["rest_area", "truck_stop", "gas_station"];
+              const QUALITY_GAS = /buc-?ee|sheetz|wawa|quiktrip|racetrac|casey|kwik/i;
+              const TRAVEL_CENTER = /pilot|love'?s|flying\s*j|ta\b|travel\s*(center|america)|petro/i;
+
+              function stopTier(s: Stop): number {
+                if (s.type === "rest_area") return 0;
+                if (s.type === "truck_stop") return 1;
+                if (TRAVEL_CENTER.test(s.name)) return 1;
+                if (s.type === "gas_station") {
+                  if (QUALITY_GAS.test(s.name)) return 2;
+                  if (s.overallRating !== null && s.overallRating >= 3.0) return 2;
+                  return 4;
+                }
+                return 5;
+              }
+
+              const INCLUDE_TYPES = ["rest_area", "truck_stop", "gas_station"];
               const nearby = stops
-                .filter((s) => PRIORITY_TYPES.includes(s.type))
+                .filter((s) => INCLUDE_TYPES.includes(s.type))
                 .map((s) => {
-                  const sLat = Number(s.lat);
-                  const sLng = Number(s.lng);
-                  const dist = haversineDistanceMiles(lat, lng, sLat, sLng);
-                  return { ...s, distanceMiles: dist };
+                  const dist = haversineDistanceMiles(lat, lng, Number(s.lat), Number(s.lng));
+                  const tier = stopTier(s);
+                  return { ...s, distanceMiles: dist, _tier: tier };
                 })
-                .sort((a, b) => a.distanceMiles - b.distanceMiles)
-                .slice(0, 10);
+                .filter((s) => s._tier <= 3)
+                .sort((a, b) => {
+                  if (a._tier !== b._tier) return a._tier - b._tier;
+                  return a.distanceMiles - b.distanceMiles;
+                })
+                .slice(0, 12);
               setNearbyData(nearby);
             } catch (e) {
               console.error("Nearby calculation failed:", e);
@@ -555,10 +573,15 @@ export function MapView({
                     {s.name}
                   </div>
                   <div style={{ fontSize: "12px", color: "#64748b" }}>
-                    {s.type.replace(/_/g, " ")} ·{" "}
-                    {s.overallRating !== null
-                      ? `${s.overallRating.toFixed(1)} ⭐`
-                      : "No rating"}
+                    {(() => {
+                      const hwy = s.address?.match(/\b(I-?\d+|US-?\d+|SR-?\d+|Hwy\s*\d+|Interstate\s+\d+|Route\s+\d+)/i);
+                      const hwySuffix = hwy ? ` · ${hwy[1]}` : "";
+                      const typeLabel = s.type.replace(/_/g, " ");
+                      const ratingText = s.overallRating !== null
+                        ? `${s.overallRating.toFixed(1)} ⭐`
+                        : "No rating";
+                      return `${typeLabel} · ${ratingText}${hwySuffix}`;
+                    })()}
                   </div>
                 </div>
                 <div style={{ textAlign: "right", flexShrink: 0 }}>
