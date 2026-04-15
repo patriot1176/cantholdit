@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -131,21 +131,24 @@ function ClusterLayer({
 
         let totalRating = 0;
         let ratedCount = 0;
+
         childMarkers.forEach((marker: any) => {
-          const rating = marker.options.icon?.options?.rating || null;
-          if (rating !== null) {
+          const rating = marker._stopRating ?? null;
+          if (rating !== null && typeof rating === "number") {
             totalRating += rating;
             ratedCount++;
           }
         });
+
         const avgRating = ratedCount > 0 ? totalRating / ratedCount : null;
 
-        let bgColor = "#3b82f6";
+        // Color-coded clusters
+        let bgColor = "#3b82f6"; // default blue
         if (avgRating !== null) {
           if (avgRating >= 4.0)
             bgColor = "#22c55e"; // Green - Royal Flush
           else if (avgRating >= 3.0)
-            bgColor = "#f59e0b"; // Orange - Okay
+            bgColor = "#f59e0b"; // Yellow/Orange - Okay
           else bgColor = "#ef4444"; // Red - Biohazard
         }
 
@@ -162,6 +165,7 @@ function ClusterLayer({
       const marker = L.marker([stop.lat, stop.lng], {
         icon: createMarkerIcon(stop.overallRating, stop.type, stop.name),
       });
+      (marker as any)._stopRating = stop.overallRating ?? null;
 
       const el = L.DomUtil.create("div");
       el.style.cssText =
@@ -213,6 +217,7 @@ export function MapView({
 }) {
   const mapRef = useRef<L.Map | null>(null);
   const [, navigate] = useWouterLocation();
+  const [locatingNearMe, setLocatingNearMe] = useState(false);
 
   useEffect(() => {
     if (searchCenter && mapRef.current) {
@@ -231,32 +236,76 @@ export function MapView({
 
   return (
     <div className="relative w-full h-full bg-slate-100 z-0">
-      {/* BIG NEAR ME BUTTON - Positioned cleanly below chips */}
+      {/* BIG NEAR ME BUTTON */}
       <button
-        onClick={() => handleNearMe(mapRef)}
+        ref={useCallback((el: HTMLButtonElement | null) => {
+          if (el) {
+            L.DomEvent.disableClickPropagation(el);
+            L.DomEvent.disableScrollPropagation(el);
+          }
+        }, [])}
+        onClick={() => {
+          if (locatingNearMe) return;
+          if (!navigator.geolocation) {
+            alert("Your browser does not support location services.");
+            return;
+          }
+          setLocatingNearMe(true);
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              const { latitude, longitude } = position.coords;
+              if (mapRef.current) {
+                mapRef.current.flyTo([latitude, longitude], 12, { duration: 1.5 });
+              }
+              setLocatingNearMe(false);
+            },
+            (error) => {
+              let message = "Unable to get your location.";
+              if (error.code === 1) message = "Location access was denied. Please allow it in your browser settings.";
+              if (error.code === 2) message = "Location information is unavailable.";
+              if (error.code === 3) message = "Location request timed out.";
+              alert(message);
+              setLocatingNearMe(false);
+            },
+            { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 }
+          );
+        }}
+        disabled={locatingNearMe}
         style={{
           position: "absolute",
-          top: "210px",
+          top: "250px",
           left: "50%",
           transform: "translateX(-50%)",
           zIndex: 2000,
-          backgroundColor: "#2563eb",
+          backgroundColor: locatingNearMe ? "#60a5fa" : "#2563eb",
           color: "white",
           padding: "18px 40px",
           borderRadius: "9999px",
           fontSize: "20px",
           fontWeight: "700",
-          boxShadow: "0 10px 30px rgba(37, 99, 235, 0.6)",
+          boxShadow: locatingNearMe
+            ? "0 10px 30px rgba(96, 165, 250, 0.4)"
+            : "0 10px 30px rgba(37, 99, 235, 0.6)",
           border: "none",
-          cursor: "pointer",
+          cursor: locatingNearMe ? "wait" : "pointer",
           display: "flex",
           alignItems: "center",
           gap: "12px",
           minWidth: "200px",
           justifyContent: "center",
+          touchAction: "manipulation",
+          WebkitTapHighlightColor: "rgba(37, 99, 235, 0.3)",
+          transition: "background-color 0.2s, box-shadow 0.2s",
         }}
       >
-        📍 Near Me
+        {locatingNearMe ? (
+          <>
+            <span style={{ display: "inline-block", animation: "spin 1s linear infinite" }}>⏳</span>
+            Locating…
+          </>
+        ) : (
+          <>📍 Near Me</>
+        )}
       </button>
 
       <MapContainer
