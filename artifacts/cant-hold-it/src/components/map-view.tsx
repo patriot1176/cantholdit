@@ -438,11 +438,10 @@ export function MapView({
                   return true;
                 });
 
-              const restAreas = candidates.filter((s) => s._bucket === 1).sort((a, b) => a.distanceMiles - b.distanceMiles);
-              const truckStops = candidates.filter((s) => s._bucket === 2).sort((a, b) => a.distanceMiles - b.distanceMiles);
+              const topTier = candidates.filter((s) => s._bucket <= 2).sort((a, b) => a.distanceMiles - b.distanceMiles);
               const gasStations = candidates.filter((s) => s._bucket === 3).sort((a, b) => a.distanceMiles - b.distanceMiles);
 
-              const nearby = [...restAreas, ...truckStops, ...gasStations].slice(0, 7);
+              const nearby = [...topTier, ...gasStations].slice(0, 7);
               setNearbyData(nearby);
             } catch (e) {
               console.error("Nearby calculation failed:", e);
