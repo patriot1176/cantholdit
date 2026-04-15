@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -12,7 +12,6 @@ import "leaflet.markercluster/dist/MarkerCluster.css";
 import { useLocation as useWouterLocation } from "wouter";
 import type { Stop } from "@workspace/api-client-react";
 
-// Continental US bounds
 const US_BOUNDS = L.latLngBounds(
   [24.396308, -125.001651],
   [49.384358, -66.93457],
@@ -21,31 +20,28 @@ const US_BOUNDS = L.latLngBounds(
 const US_CENTER: [number, number] = [39.5, -98.35];
 const US_ZOOM = 4;
 
-// ==================== NEAR ME BUTTON ====================
-const handleNearMe = (mapRef: React.RefObject<L.Map | null>) => {
-  if (!navigator.geolocation) {
-    alert("Your browser does not support location services.");
-    return;
-  }
+function haversineDistanceMiles(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+): number {
+  const R = 3958.8;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
-  navigator.geolocation.getCurrentPosition(
-    (position) => {
-      const { latitude, longitude } = position.coords;
-      if (mapRef.current) {
-        mapRef.current.flyTo([latitude, longitude], 12, { duration: 1.5 });
-      }
-    },
-    (error) => {
-      let message = "Unable to get your location.";
-      if (error.code === 1)
-        message =
-          "Location access was denied. Please allow it in your browser settings.";
-      if (error.code === 2) message = "Location information is unavailable.";
-      if (error.code === 3) message = "Location request timed out.";
-      alert(message);
-    },
-  );
-};
+function formatDistance(miles: number): string {
+  if (miles < 0.1) return "< 0.1 mi";
+  if (miles < 10) return `${miles.toFixed(1)} mi`;
+  return `${Math.round(miles)} mi`;
+}
 
 function getStopEmoji(type: string, name?: string): string {
   if (name && /buc-ee|bucee/i.test(name)) return "🦫";
@@ -63,6 +59,39 @@ function getStopEmoji(type: string, name?: string): string {
     default:
       return "🚽";
   }
+}
+
+function getAmenityIcons(type: string): string {
+  switch (type) {
+    case "rest_area":
+      return "🚻 Restrooms · 🅿️ Parking · 🐕 Pet area";
+    case "gas_station":
+      return "⛽ Gas · 🚻 Restrooms · 🏪 Store";
+    case "truck_stop":
+      return "⛽ Gas · 🚿 Showers · 🚻 Restrooms · 🍔 Food";
+    case "fast_food":
+      return "🍔 Food · 🚻 Restrooms · 📶 WiFi";
+    case "walmart":
+      return "🛒 Store · 🚻 Restrooms · 🅿️ Parking";
+    default:
+      return "🚻 Restrooms";
+  }
+}
+
+function ratingLabel(r: number | null): string {
+  if (r === null) return "Not yet rated";
+  if (r >= 4.5) return "Royal Flush";
+  if (r >= 4.0) return "Clean";
+  if (r >= 3.0) return "Decent";
+  if (r >= 2.0) return "Rough";
+  return "Biohazard";
+}
+
+function ratingColor(r: number | null): string {
+  if (r === null) return "#94a3b8";
+  if (r >= 4.0) return "#22c55e";
+  if (r >= 3.0) return "#f59e0b";
+  return "#ef4444";
 }
 
 const createMarkerIcon = (
@@ -86,13 +115,7 @@ const createMarkerIcon = (
     });
   }
 
-  let color = "#94a3b8";
-  if (rating !== null) {
-    if (rating >= 4.0) color = "#22c55e";
-    else if (rating >= 3.0) color = "#f59e0b";
-    else color = "#ef4444";
-  }
-
+  const color = ratingColor(rating);
   const emoji = getStopEmoji(type, name);
   return L.divIcon({
     className: "custom-marker",
@@ -107,18 +130,74 @@ const createMarkerIcon = (
   });
 };
 
+function buildPopupHtml(
+  stop: Stop,
+  userLoc: { lat: number; lng: number } | null,
+): string {
+  const emoji = getStopEmoji(stop.type, stop.name);
+  const typeName = stop.type.replace(/_/g, " ");
+  const rColor = ratingColor(stop.overallRating);
+  const rLabel = ratingLabel(stop.overallRating);
+  const rText =
+    stop.overallRating !== null
+      ? `${stop.overallRating.toFixed(1)} — ${rLabel}`
+      : rLabel;
+
+  let distHtml = "";
+  if (userLoc) {
+    const d = haversineDistanceMiles(
+      userLoc.lat,
+      userLoc.lng,
+      stop.lat,
+      stop.lng,
+    );
+    distHtml = `<div style="font-size:12px;color:#3b82f6;font-weight:600;margin-bottom:6px">📍 ${formatDistance(d)} away</div>`;
+  }
+
+  const addressLine = stop.address || "";
+
+  const amenities = getAmenityIcons(stop.type);
+
+  const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${stop.lat},${stop.lng}`;
+
+  return `
+    <div style="padding:6px 2px;min-width:220px;max-width:260px;font-family:system-ui,-apple-system,sans-serif">
+      <div style="font-weight:700;font-size:15px;line-height:1.3;margin-bottom:2px">${stop.name}</div>
+      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">${emoji} ${typeName}</div>
+      ${addressLine ? `<div style="font-size:12px;color:#475569;margin-bottom:6px;line-height:1.3">📌 ${addressLine}</div>` : ""}
+      ${distHtml}
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+        <span style="font-weight:700;font-size:18px;color:${rColor}">${stop.overallRating !== null ? stop.overallRating.toFixed(1) : "—"}</span>
+        <span style="font-size:13px;color:#475569">${rText}</span>
+        <span style="font-size:11px;color:#94a3b8">(${stop.totalRatings})</span>
+      </div>
+      <div style="font-size:11px;color:#64748b;margin-bottom:10px;line-height:1.5;border-top:1px solid #e2e8f0;padding-top:6px">${amenities}</div>
+      <div style="display:flex;gap:6px">
+        <button data-action="details" style="flex:1;background:#3b82f6;color:white;border:none;padding:10px 8px;border-radius:10px;font-weight:700;cursor:pointer;font-size:13px">View Details</button>
+        <a href="${directionsUrl}" target="_blank" rel="noopener noreferrer" style="flex:1;background:#22c55e;color:white;border:none;padding:10px 8px;border-radius:10px;font-weight:700;cursor:pointer;font-size:13px;text-decoration:none;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px">🧭 Directions</a>
+      </div>
+    </div>
+  `;
+}
+
 function ClusterLayer({
   stops,
   onNavigate,
+  userLocation,
 }: {
   stops: Stop[];
   onNavigate: (id: number) => void;
+  userLocation: { lat: number; lng: number } | null;
 }) {
   const map = useMap();
   const navigateRef = useRef(onNavigate);
+  const userLocRef = useRef(userLocation);
   useEffect(() => {
     navigateRef.current = onNavigate;
   }, [onNavigate]);
+  useEffect(() => {
+    userLocRef.current = userLocation;
+  }, [userLocation]);
 
   useEffect(() => {
     const group = (L as any).markerClusterGroup({
@@ -131,7 +210,6 @@ function ClusterLayer({
 
         let totalRating = 0;
         let ratedCount = 0;
-
         childMarkers.forEach((marker: any) => {
           const rating = marker._stopRating ?? null;
           if (rating !== null && typeof rating === "number") {
@@ -141,21 +219,20 @@ function ClusterLayer({
         });
 
         const avgRating = ratedCount > 0 ? totalRating / ratedCount : null;
-
-        // Color-coded clusters
-        let bgColor = "#3b82f6"; // default blue
+        let bgColor = "#3b82f6";
         if (avgRating !== null) {
-          if (avgRating >= 4.0)
-            bgColor = "#22c55e"; // Green - Royal Flush
-          else if (avgRating >= 3.0)
-            bgColor = "#f59e0b"; // Yellow/Orange - Okay
-          else bgColor = "#ef4444"; // Red - Biohazard
+          if (avgRating >= 4.0) bgColor = "#22c55e";
+          else if (avgRating >= 3.0) bgColor = "#f59e0b";
+          else bgColor = "#ef4444";
         }
 
+        const size = count > 100 ? 56 : count > 30 ? 50 : 46;
+        const fontSize = count > 100 ? 16 : count > 30 ? 15 : 14;
+
         return L.divIcon({
-          html: `<div style="background:${bgColor};color:white;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;border:3px solid white;box-shadow:0 4px 12px rgba(0,0,0,0.4)">${count}</div>`,
-          iconSize: [44, 44],
-          iconAnchor: [22, 22],
+          html: `<div style="background:${bgColor};color:white;width:${size}px;height:${size}px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:${fontSize}px;border:3px solid white;box-shadow:0 4px 14px rgba(0,0,0,0.4)">${count}</div>`,
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2],
           className: "",
         });
       },
@@ -166,27 +243,27 @@ function ClusterLayer({
         icon: createMarkerIcon(stop.overallRating, stop.type, stop.name),
       });
       (marker as any)._stopRating = stop.overallRating ?? null;
+      (marker as any)._stopData = stop;
 
-      const el = L.DomUtil.create("div");
-      el.style.cssText =
-        "padding:4px;min-width:190px;font-family:system-ui,sans-serif";
-      el.innerHTML = `
-        <div style="font-weight:700;font-size:15px;line-height:1.2;margin-bottom:2px">${stop.name}</div>
-        <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">${stop.type.replace("_", " ")}</div>
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
-          <span style="font-size:18px">${getStopEmoji(stop.type, stop.name)}</span>
-          <span style="font-weight:700;font-size:16px">${stop.overallRating ? stop.overallRating.toFixed(1) : "—"}</span>
-          <span style="font-size:12px;color:#64748b">(${stop.totalRatings} ratings)</span>
-        </div>
-        <button style="background:#3b82f6;color:white;border:none;padding:10px;border-radius:10px;font-weight:700;width:100%;cursor:pointer;font-size:13px">View Details →</button>
-      `;
+      marker.on("click", () => {
+        const html = buildPopupHtml(stop, userLocRef.current);
+        const el = L.DomUtil.create("div");
+        el.innerHTML = html;
 
-      el.querySelector("button")?.addEventListener("click", () => {
-        navigateRef.current(stop.id);
-        map.closePopup();
+        el.querySelector('[data-action="details"]')?.addEventListener(
+          "click",
+          () => {
+            navigateRef.current(stop.id);
+            map.closePopup();
+          },
+        );
+
+        marker.unbindPopup();
+        marker.bindPopup(el, { maxWidth: 280, minWidth: 220 });
+        marker.openPopup();
       });
 
-      marker.bindPopup(el, { maxWidth: 240 });
+      marker.bindPopup("Loading...", { maxWidth: 280, minWidth: 220 });
       group.addLayer(marker);
     });
 
@@ -201,8 +278,12 @@ function ClusterLayer({
   return null;
 }
 
+interface NearbyStop extends Stop {
+  distanceMiles: number;
+}
+
 const mapBtnClass =
-  "bg-white w-12 h-12 rounded-full shadow-lg shadow-black/10 border border-border flex items-center justify-center hover:bg-slate-50 active:scale-95 transition-all";
+  "bg-white w-12 h-12 rounded-full shadow-lg shadow-black/10 border border-border flex items-center justify-content-center hover:bg-slate-50 active:scale-95 transition-all";
 
 export function MapView({
   stops,
@@ -218,6 +299,29 @@ export function MapView({
   const mapRef = useRef<L.Map | null>(null);
   const [, navigate] = useWouterLocation();
   const [locatingNearMe, setLocatingNearMe] = useState(false);
+  const [gpsLocation, setGpsLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [showNearbyPanel, setShowNearbyPanel] = useState(false);
+
+  const effectiveUserLoc = gpsLocation || userLocation;
+
+  const nearbyStops = useMemo<NearbyStop[]>(() => {
+    if (!effectiveUserLoc) return [];
+    return stops
+      .map((s) => ({
+        ...s,
+        distanceMiles: haversineDistanceMiles(
+          effectiveUserLoc.lat,
+          effectiveUserLoc.lng,
+          s.lat,
+          s.lng,
+        ),
+      }))
+      .sort((a, b) => a.distanceMiles - b.distanceMiles)
+      .slice(0, 10);
+  }, [stops, effectiveUserLoc]);
 
   useEffect(() => {
     if (searchCenter && mapRef.current) {
@@ -234,9 +338,39 @@ export function MapView({
     }
   }, [routePolyline]);
 
+  const handleNearMeClick = useCallback(() => {
+    if (locatingNearMe) return;
+    if (!navigator.geolocation) {
+      alert("Your browser does not support location services.");
+      return;
+    }
+    setLocatingNearMe(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        setGpsLocation({ lat: latitude, lng: longitude });
+        if (mapRef.current) {
+          mapRef.current.flyTo([latitude, longitude], 11, { duration: 1.5 });
+        }
+        setLocatingNearMe(false);
+        setShowNearbyPanel(true);
+      },
+      (error) => {
+        let message = "Unable to get your location.";
+        if (error.code === 1)
+          message =
+            "Location access was denied. Please allow it in your browser settings.";
+        if (error.code === 2) message = "Location information is unavailable.";
+        if (error.code === 3) message = "Location request timed out.";
+        alert(message);
+        setLocatingNearMe(false);
+      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 },
+    );
+  }, [locatingNearMe]);
+
   return (
     <div className="relative w-full h-full bg-slate-100 z-0">
-      {/* BIG NEAR ME BUTTON */}
       <button
         ref={useCallback((el: HTMLButtonElement | null) => {
           if (el) {
@@ -244,32 +378,7 @@ export function MapView({
             L.DomEvent.disableScrollPropagation(el);
           }
         }, [])}
-        onClick={() => {
-          if (locatingNearMe) return;
-          if (!navigator.geolocation) {
-            alert("Your browser does not support location services.");
-            return;
-          }
-          setLocatingNearMe(true);
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              const { latitude, longitude } = position.coords;
-              if (mapRef.current) {
-                mapRef.current.flyTo([latitude, longitude], 12, { duration: 1.5 });
-              }
-              setLocatingNearMe(false);
-            },
-            (error) => {
-              let message = "Unable to get your location.";
-              if (error.code === 1) message = "Location access was denied. Please allow it in your browser settings.";
-              if (error.code === 2) message = "Location information is unavailable.";
-              if (error.code === 3) message = "Location request timed out.";
-              alert(message);
-              setLocatingNearMe(false);
-            },
-            { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 }
-          );
-        }}
+        onClick={handleNearMeClick}
         disabled={locatingNearMe}
         style={{
           position: "absolute",
@@ -279,9 +388,9 @@ export function MapView({
           zIndex: 2000,
           backgroundColor: locatingNearMe ? "#60a5fa" : "#2563eb",
           color: "white",
-          padding: "18px 40px",
+          padding: "16px 36px",
           borderRadius: "9999px",
-          fontSize: "20px",
+          fontSize: "18px",
           fontWeight: "700",
           boxShadow: locatingNearMe
             ? "0 10px 30px rgba(96, 165, 250, 0.4)"
@@ -290,7 +399,7 @@ export function MapView({
           cursor: locatingNearMe ? "wait" : "pointer",
           display: "flex",
           alignItems: "center",
-          gap: "12px",
+          gap: "10px",
           minWidth: "200px",
           justifyContent: "center",
           touchAction: "manipulation",
@@ -300,13 +409,141 @@ export function MapView({
       >
         {locatingNearMe ? (
           <>
-            <span style={{ display: "inline-block", animation: "spin 1s linear infinite" }}>⏳</span>
+            <span
+              style={{
+                display: "inline-block",
+                animation: "spin 1s linear infinite",
+              }}
+            >
+              ⏳
+            </span>
             Locating…
           </>
         ) : (
           <>📍 Near Me</>
         )}
       </button>
+
+      {showNearbyPanel && nearbyStops.length > 0 && (
+        <div
+          ref={useCallback((el: HTMLDivElement | null) => {
+            if (el) {
+              L.DomEvent.disableClickPropagation(el);
+              L.DomEvent.disableScrollPropagation(el);
+            }
+          }, [])}
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 2000,
+            background: "white",
+            borderTopLeftRadius: "16px",
+            borderTopRightRadius: "16px",
+            boxShadow: "0 -4px 20px rgba(0,0,0,0.15)",
+            maxHeight: "40vh",
+            overflowY: "auto",
+            WebkitOverflowScrolling: "touch",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: "12px 16px 4px",
+              borderBottom: "1px solid #e2e8f0",
+            }}
+          >
+            <span
+              style={{ fontWeight: 700, fontSize: "15px", color: "#1e293b" }}
+            >
+              📍 Nearby Stops
+            </span>
+            <button
+              onClick={() => setShowNearbyPanel(false)}
+              style={{
+                background: "none",
+                border: "none",
+                fontSize: "20px",
+                cursor: "pointer",
+                color: "#94a3b8",
+                padding: "4px 8px",
+              }}
+            >
+              ✕
+            </button>
+          </div>
+          {nearbyStops.map((s) => (
+            <div
+              key={s.id}
+              onClick={() => navigate(`/stop/${s.id}`)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                padding: "10px 16px",
+                borderBottom: "1px solid #f1f5f9",
+                cursor: "pointer",
+              }}
+            >
+              <span style={{ fontSize: "22px" }}>
+                {getStopEmoji(s.type, s.name)}
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontWeight: 600,
+                    fontSize: "14px",
+                    color: "#1e293b",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {s.name}
+                </div>
+                <div style={{ fontSize: "12px", color: "#64748b" }}>
+                  {s.type.replace(/_/g, " ")} ·{" "}
+                  {s.overallRating !== null
+                    ? `${s.overallRating.toFixed(1)} ⭐`
+                    : "No rating"}
+                </div>
+              </div>
+              <div
+                style={{
+                  textAlign: "right",
+                  flexShrink: 0,
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: 700,
+                    fontSize: "14px",
+                    color: "#3b82f6",
+                  }}
+                >
+                  {formatDistance(s.distanceMiles)}
+                </div>
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    fontSize: "11px",
+                    color: "#22c55e",
+                    fontWeight: 600,
+                  }}
+                >
+                  Directions →
+                </a>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <MapContainer
         ref={mapRef}
@@ -323,14 +560,17 @@ export function MapView({
           url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
         />
 
-        {userLocation && (
+        {(effectiveUserLoc || userLocation) && (
           <Marker
-            position={[userLocation.lat, userLocation.lng]}
+            position={[
+              (effectiveUserLoc || userLocation)!.lat,
+              (effectiveUserLoc || userLocation)!.lng,
+            ]}
             icon={L.divIcon({
               className: "user-marker",
-              html: `<div style="width:14px;height:14px;background:#3b82f6;border-radius:50%;border:2.5px solid white;box-shadow:0 0 0 4px rgba(59,130,246,0.25)"></div>`,
-              iconSize: [14, 14],
-              iconAnchor: [7, 7],
+              html: `<div style="width:16px;height:16px;background:#3b82f6;border-radius:50%;border:3px solid white;box-shadow:0 0 0 5px rgba(59,130,246,0.25)"></div>`,
+              iconSize: [16, 16],
+              iconAnchor: [8, 8],
             })}
           />
         )}
@@ -345,10 +585,10 @@ export function MapView({
         <ClusterLayer
           stops={stops}
           onNavigate={(id) => navigate(`/stop/${id}`)}
+          userLocation={effectiveUserLoc}
         />
       </MapContainer>
 
-      {/* Zoom controls */}
       <div className="absolute bottom-6 right-4 z-[400] flex flex-col gap-2">
         <button
           onClick={() => mapRef.current?.zoomIn(1)}
