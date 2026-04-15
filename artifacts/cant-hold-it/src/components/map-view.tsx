@@ -425,7 +425,7 @@ export function MapView({
               }
 
               const seen = new Set<string>();
-              const candidates = stops
+              const allWithDist = stops
                 .filter((s) => INCLUDE_TYPES.includes(s.type))
                 .map((s) => {
                   const dist = haversineDistanceMiles(lat, lng, Number(s.lat), Number(s.lng));
@@ -433,16 +433,7 @@ export function MapView({
                   const displayName = enrichName(s);
                   return { ...s, name: displayName, distanceMiles: dist, _tier: tier };
                 })
-                .filter((s) => s._tier <= 3)
-                .sort((a, b) => {
-                  const dA = Math.floor(a.distanceMiles / 5);
-                  const dB = Math.floor(b.distanceMiles / 5);
-                  if (dA !== dB) return dA - dB;
-                  const rA = a.overallRating ?? -1;
-                  const rB = b.overallRating ?? -1;
-                  if (rA !== rB) return rB - rA;
-                  return a.distanceMiles - b.distanceMiles;
-                })
+                .sort((a, b) => a.distanceMiles - b.distanceMiles)
                 .filter((s) => {
                   const key = dedupeKey(s);
                   if (seen.has(key)) return false;
@@ -450,10 +441,15 @@ export function MapView({
                   return true;
                 });
 
-              const rated = candidates.filter((s) => s.overallRating !== null);
-              const nearby = rated.length >= 5
-                ? rated.slice(0, 8)
-                : candidates.slice(0, 8);
+              const closest = allWithDist.slice(0, 4);
+              const closestIds = new Set(closest.map((s) => s.id));
+              const rest = allWithDist
+                .filter((s) => !closestIds.has(s.id) && s._tier <= 3)
+                .sort((a, b) => {
+                  if (a._tier !== b._tier) return a._tier - b._tier;
+                  return a.distanceMiles - b.distanceMiles;
+                });
+              const nearby = [...closest, ...rest].slice(0, 8);
               setNearbyData(nearby);
             } catch (e) {
               console.error("Nearby calculation failed:", e);
