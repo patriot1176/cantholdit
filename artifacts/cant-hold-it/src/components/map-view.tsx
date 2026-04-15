@@ -378,19 +378,18 @@ export function MapView({
           setTimeout(() => {
             try {
               if (mapRef.current) mapRef.current.invalidateSize();
-              const QUALITY_GAS = /buc-?ee|sheetz|wawa|quiktrip|racetrac|casey|kwik/i;
               const TRAVEL_CENTER = /pilot|love'?s|flying\s*j|ta\b|travel\s*(center|america)|petro/i;
+              const QUALITY_GAS = /buc-?ee|sheetz|wawa|quiktrip|racetrac|casey|kwik/i;
+              const GENERIC_GAS = /speedway|marathon|shell|bp|circle\s*k|sunoco|valero|citgo|mobil|exxon/i;
 
-              function stopTier(s: Stop): number {
-                if (s.type === "rest_area") return 0;
-                if (s.type === "truck_stop") return 1;
-                if (TRAVEL_CENTER.test(s.name)) return 1;
-                if (s.type === "gas_station") {
-                  if (QUALITY_GAS.test(s.name)) return 2;
-                  if (s.overallRating !== null && s.overallRating >= 3.0) return 2;
-                  return 4;
-                }
-                return 5;
+              function stopPriority(s: Stop, dist: number): number {
+                if (s.type === "rest_area" && s.totalRatings > 0) return 0;
+                if (s.type === "rest_area") return 1;
+                if (s.type === "truck_stop" || TRAVEL_CENTER.test(s.name)) return 2;
+                if (s.type === "gas_station" && s.totalRatings > 0) return 3;
+                if (s.type === "gas_station" && QUALITY_GAS.test(s.name)) return 4;
+                if (s.type === "gas_station" && dist < 2) return 5;
+                return 99;
               }
 
               const INCLUDE_TYPES = ["rest_area", "truck_stop", "gas_station"];
@@ -425,14 +424,15 @@ export function MapView({
               }
 
               const seen = new Set<string>();
-              const allWithDist = stops
+              const candidates = stops
                 .filter((s) => INCLUDE_TYPES.includes(s.type))
                 .map((s) => {
                   const dist = haversineDistanceMiles(lat, lng, Number(s.lat), Number(s.lng));
-                  const tier = stopTier(s);
+                  const prio = stopPriority(s, dist);
                   const displayName = enrichName(s);
-                  return { ...s, name: displayName, distanceMiles: dist, _tier: tier };
+                  return { ...s, name: displayName, distanceMiles: dist, _prio: prio };
                 })
+                .filter((s) => s._prio < 99)
                 .sort((a, b) => a.distanceMiles - b.distanceMiles)
                 .filter((s) => {
                   const key = dedupeKey(s);
@@ -441,15 +441,21 @@ export function MapView({
                   return true;
                 });
 
-              const closest = allWithDist.slice(0, 4);
-              const closestIds = new Set(closest.map((s) => s.id));
-              const rest = allWithDist
-                .filter((s) => !closestIds.has(s.id) && s._tier <= 3)
-                .sort((a, b) => {
-                  if (a._tier !== b._tier) return a._tier - b._tier;
-                  return a.distanceMiles - b.distanceMiles;
-                });
-              const nearby = [...closest, ...rest].slice(0, 8);
+              const BOOST_RADIUS = 15;
+              const boosted = candidates.filter((s) => s._prio <= 2 && s.distanceMiles <= BOOST_RADIUS);
+              const boostedIds = new Set(boosted.map((s) => s.id));
+              const others = candidates.filter((s) => !boostedIds.has(s.id));
+
+              boosted.sort((a, b) => {
+                if (a._prio !== b._prio) return a._prio - b._prio;
+                return a.distanceMiles - b.distanceMiles;
+              });
+              others.sort((a, b) => {
+                if (a._prio !== b._prio) return a._prio - b._prio;
+                return a.distanceMiles - b.distanceMiles;
+              });
+
+              const nearby = [...boosted, ...others].slice(0, 8);
               setNearbyData(nearby);
             } catch (e) {
               console.error("Nearby calculation failed:", e);
